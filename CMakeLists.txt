@@ -32,6 +32,8 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g -ggdb -O0 -fno-omit-frame-pointer -DDEBUG")
 if(APPLE)
     set(HOMEBREW_PREFIX "/usr/local" CACHE PATH "Path to Homebrew installation")
     set(HOMEBREW_INCLUDE ${HOMEBREW_PREFIX}/include)
+    include_directories(/usr/local/include)
+    link_directories(/usr/local/lib)
 else()
     set(HOMEBREW_INCLUDE "")
 endif()
@@ -43,7 +45,6 @@ target_include_directories(rainbowcrack
                                 ./src/
                                 ./SimdHash/SimdHash/
                                 ./libdispatchqueue/include/
-                                ${HOMEBREW_INCLUDE}
                         )
 target_link_libraries(rainbowcrack simdhash dispatchqueue)
 
