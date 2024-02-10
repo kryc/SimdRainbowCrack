@@ -1,6 +1,7 @@
 #include <array>
 #include <iostream>
 #include <gmpxx.h>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -114,7 +115,7 @@ ComputeChain(
     return ret;
 }
 
-bool
+std::optional<std::string>
 ValidateChain(
     const Chain Chain,
     const size_t Min,
@@ -137,11 +138,11 @@ ValidateChain(
         SHA1((uint8_t*)&reduced[0], length, hash);
         if (memcmp(Hash, hash, SHA1_SIZE) == 0)
         {
-            return true;
+            return std::string(&reduced[0], &reduced[length]);
         }
         length = Reduce(&reduced[0], Max, hash, SHA1_SIZE, maxindex, i);
     }
-    return false;
+    return {};
 }
 
 void
@@ -187,9 +188,13 @@ CheckChain(
         // Check end, if it matches, we can perform one full chain to see if we find it
         if (memcmp(Chain.End().c_str(), &reduced[0], length) == 0)
         {
-            auto hashstr = Util::ToHex(Hash, SHA1_SIZE);
-            std::string result(&reduced[0], &reduced[length]);
-            std::cout << hashstr << ' ' << result << std::endl;
+            auto match = ValidateChain(Chain, Min, Max, Hash);
+            if (match.has_value())
+            {
+                auto hashstr = Util::ToHex(Hash, SHA1_SIZE);
+                std::cout << hashstr << ' ' << match.value() << std::endl;
+            }
+            
         }
     }
 }
