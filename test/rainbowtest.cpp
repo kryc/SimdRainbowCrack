@@ -11,6 +11,7 @@
 #include "Chain.hpp"
 #include "Util.hpp"
 #include "WordGenerator.hpp"
+#include "SimdHashBuffer.hpp"
 
 using ChainBlock = std::vector<Chain>;
 
@@ -49,10 +50,9 @@ ComputeChain(
     std::string* Midpoint
 )
 {
-    std::vector<uint8_t> buffer;
-    std::vector<uint8_t*> buffers;
-    std::vector<size_t> lengths;
-    std::vector<uint8_t> hashes;
+    SimdHashBuffer words(Max + 1);
+    SimdHashBuffer hashes(SHA1_SIZE);
+    
     ChainBlock ret;
     
     mpz_class counter;
@@ -65,22 +65,12 @@ ComputeChain(
     // Add the index for this chain
     counter += Start;
 
-    buffer.resize((Max + 1) * SimdLanes());
-    buffers.resize((Max + 1) * SimdLanes());
     for (size_t i = 0; i < SimdLanes(); i++)
     {
-        buffers[i] = &buffer[i * (Max + 1)];
-    }
-
-    lengths.resize(SimdLanes());
-    hashes.resize(SimdLanes() * SHA1_SIZE);
-
-    for (size_t i = 0; i < SimdLanes(); i++)
-    {
-        auto length = WordGenerator::GenerateWord((char*)buffers[i], Max, counter, ASCII);
-        lengths[i] = length;
-        buffers[i][length] = '\0';
-        std::string start((char*)buffers[i]);
+        auto length = WordGenerator::GenerateWord((char*)words[i], Max, counter, ASCII);
+        words.SetLength(i, length);
+        words[i][length] = '\0';
+        std::string start((char*)words[i]);
         ret.push_back(Chain(counter, std::move(start), Length));
         counter++;
     }
@@ -89,27 +79,27 @@ ComputeChain(
     {
         SimdHashContext ctx;
         SimdSha1Init(&ctx);
-        SimdHashUpdate(&ctx, &lengths[0], (const uint8_t**)&buffers[0]);
+        SimdHashUpdate(&ctx, words.Lengths(), words.ConstBuffers());
         SimdSha1Finalize(&ctx);
-        SimdHashGetHashes(&ctx, &hashes[0]);
+        SimdHashGetHashes(&ctx, hashes.Buffer());
 
         for (size_t h = 0; h < SimdLanes(); h++)
         {
-            const uint8_t* hash = &hashes[h * SHA1_SIZE];
-            auto length = Reduce((char*)buffers[h], Max, hash, SHA1_SIZE, maxindex, i);
-            lengths[h] = length;
-            buffers[h][length] = '\0';
+            const uint8_t* hash = hashes[h];
+            auto length = Reduce((char*)words[h], Max, hash, SHA1_SIZE, maxindex, i);
+            words.SetLength(h, length);
+            words[h][length] = '\0';
         }
 
         if (i == Capture)
         {
-            Midpoint->assign(std::string((char*)buffers[0], (char*)(buffers[0] + lengths[0])));
+            Midpoint->assign(std::string((char*)words[0]));
         }
     }
 
     for (size_t i = 0; i < SimdLanes(); i++)
     {
-        ret[i].SetEnd((char*)buffers[i]);
+        ret[i].SetEnd((char*)words[i]);
     }
 
     return ret;
@@ -198,6 +188,75 @@ CheckChain(
         }
     }
 }
+
+/*void
+CheckChainSimd(
+    const Chain Chain,
+    const size_t Min,
+    const size_t Max,
+    const uint8_t* Hash
+)
+{
+    mpz_class start;
+    mpz_class counter;
+    mpz_class maxindex;
+
+    // Get the start index
+    start = Chain.Index();
+
+    // Calculate lower bound
+    counter = WordGenerator::WordLengthIndex(Min, ASCII);
+    // Calculate the upper bount
+    maxindex = WordGenerator::WordLengthIndex(Max + 1, ASCII);
+    // Add the index for this chain
+    counter += start;
+
+    SimdHashBuffer words(Max + 1);
+    SimdHashBuffer hashes(SHA1_SIZE);
+    std::vector<char> reducedTop;
+    size_t topLength;
+    reducedTop.resize(Max);
+
+    size_t length;
+    size_t lastIndex = words.Count() - 1;
+
+    // Initialize hash buffers
+    for (size_t i = 0; i < SimdLanes(); i++)
+    {
+        memcpy(hashes[i], Hash, SHA1_SIZE);
+    }
+
+    for (ssize_t i = Chain.Length() - 1; i >= 0; i--)
+    {
+        // Do reductions
+        topLength = Reduce(&reducedTop[0], Max, hashes[0], SHA1_SIZE, maxindex, i);
+        for (size_t j = 1; j < SimdLanes() - 1; j++)
+        {
+            length = Reduce((char*)words[j - 1], Max, hashes[j], SHA1_SIZE, maxindex, i - j);
+            words.SetLength(j - 1, length);
+        }
+        // Reduce the original hash into the last bucket
+        if (i > SimdLanes())
+        {
+            length = Reduce((char*)words[lastIndex], Max, Hash, SHA1_SIZE, maxindex, i - SimdLanes());
+            words.SetLength(lastIndex, length);
+        }
+
+        // Check end, if it matches, we can perform one full chain to see if we find it
+        if (memcmp(Chain.End().c_str(), &reducedTop[0], topLength) == 0)
+        {
+            std::cout << "Found End" << std::endl;
+            break;
+        }
+
+        // Do a round of hashes
+        SimdHashContext ctx;
+        SimdSha1Init(&ctx);
+        SimdHashUpdate(&ctx, words.Lengths(), words.ConstBuffers());
+        SimdSha1Finalize(&ctx);
+        SimdHashGetHashes(&ctx, hashes.Buffer());
+    }
+}*/
 
 int
 main(

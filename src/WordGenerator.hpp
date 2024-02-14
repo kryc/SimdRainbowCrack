@@ -1,5 +1,5 @@
 //
-//  PreimageContext.hpp
+//  WordGenerator.hpp
 //  SimdCrack
 //
 //  Created by Kryc on 20/01/2024.
