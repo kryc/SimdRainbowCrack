@@ -12,33 +12,10 @@
 #include "Util.hpp"
 #include "WordGenerator.hpp"
 #include "SimdHashBuffer.hpp"
+#include "Reduce.hpp"
 
 using ChainBlock = std::vector<Chain>;
 
-size_t
-Reduce(
-    char* Destination,
-    size_t DestLength,
-    const uint8_t* Hash,
-    const size_t Length,
-    const mpz_class MaxIndex,
-    const size_t Iteration
-)
-{
-    mpz_class reduction;
-    mpz_class iteration(Iteration);
-
-    mpz_import(reduction.get_mpz_t(), Length, 1, sizeof(uint8_t), 1, 0, Hash);
-    reduction ^= iteration;
-    reduction %= MaxIndex;
-
-    return WordGenerator::GenerateWord(
-        Destination,
-        DestLength,
-        reduction,
-        ASCII
-    );
-}
 
 ChainBlock
 ComputeChain(
@@ -56,12 +33,11 @@ ComputeChain(
     ChainBlock ret;
     
     mpz_class counter;
-    mpz_class maxindex;
+
+    BigIntReducer reducer(Min, Max, SHA1_SIZE);
 
     // Calculate lower bound
     counter = WordGenerator::WordLengthIndex(Min, ASCII);
-    // Calculate the upper bount
-    maxindex = WordGenerator::WordLengthIndex(Max + 1, ASCII);
     // Add the index for this chain
     counter += Start;
 
@@ -86,7 +62,7 @@ ComputeChain(
         for (size_t h = 0; h < SimdLanes(); h++)
         {
             const uint8_t* hash = hashes[h];
-            auto length = Reduce((char*)words[h], Max, hash, SHA1_SIZE, maxindex, i);
+            auto length = reducer.Reduce((char*)words[h], Max, hash, i);
             words.SetLength(h, length);
             words[h][length] = '\0';
         }
@@ -116,9 +92,7 @@ ValidateChain(
     size_t length;
     uint8_t hash[SHA1_SIZE];
     std::vector<char> reduced(Max + 1);
-    mpz_class maxindex;
-    
-    maxindex = WordGenerator::WordLengthIndex(Max + 1, ASCII);
+    BigIntReducer reducer(Min, Max, SHA1_SIZE);
 
     length = Chain.Start().size();
     memcpy(&reduced[0], Chain.Start().c_str(), length);
@@ -130,7 +104,7 @@ ValidateChain(
         {
             return std::string(&reduced[0], &reduced[length]);
         }
-        length = Reduce(&reduced[0], Max, hash, SHA1_SIZE, maxindex, i);
+        length = reducer.Reduce(&reduced[0], Max, hash, i);
     }
     return {};
 }
@@ -145,17 +119,16 @@ CheckChain(
 {
     mpz_class start;
     mpz_class counter;
-    mpz_class maxindex;
 
     // Get the start index
     start = Chain.Index();
 
     // Calculate lower bound
     counter = WordGenerator::WordLengthIndex(Min, ASCII);
-    // Calculate the upper bount
-    maxindex = WordGenerator::WordLengthIndex(Max + 1, ASCII);
     // Add the index for this chain
     counter += start;
+
+    BigIntReducer reducer(Min, Max, SHA1_SIZE);
 
     uint8_t hash[SHA1_SIZE];
     std::vector<char> reduced(Max + 1);
@@ -168,12 +141,12 @@ CheckChain(
 
         for (size_t j = i; j < Chain.Length() - 1; j++)
         {
-            length = Reduce(&reduced[0], Max, hash, SHA1_SIZE, maxindex, j);
+            length = reducer.Reduce(&reduced[0], Max, hash, j);
             SHA1((uint8_t*)&reduced[0], length, hash);
         }
 
         // Final reduction
-        length = Reduce(&reduced[0], Max, hash, SHA1_SIZE, maxindex, Chain.Length() - 1);
+        length = reducer.Reduce(&reduced[0], Max, hash, Chain.Length() - 1);
     
         // Check end, if it matches, we can perform one full chain to see if we find it
         if (memcmp(Chain.End().c_str(), &reduced[0], length) == 0)
