@@ -22,7 +22,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # set compiler flags
 # set(STD_COMPILE_FLAGS "-Wall -Werror -g -O3 -fsanitize=address")
 set(STD_COMPILE_FLAGS "-Wall -Werror -g -O3")
-set(STD_LINKER_FLAGS "-lpthread -lgmpxx -lgmp")
+set(STD_LINKER_FLAGS "-lpthread -lgmpxx -lgmp -lcrypto")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${STD_COMPILE_FLAGS}")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${STD_COMPILE_FLAGS}")
@@ -62,8 +62,8 @@ foreach(TEST ${TESTS})
     target_include_directories(${TESTNAME}
                                 PUBLIC
                                     ./SimdHash/SimdHash/
+                                    ./libdispatchqueue/include/
                                     ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_options(${TESTNAME} PRIVATE "LINKER:-lcrypto")
-    target_link_libraries(${TESTNAME} simdhash)
+    target_link_libraries(${TESTNAME} simdhash dispatchqueue)
     add_dependencies(tests ${TESTNAME})
 endforeach()

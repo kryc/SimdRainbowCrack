@@ -128,7 +128,7 @@ CheckChain(
     // Add the index for this chain
     counter += start;
 
-    ModuloReducer reducer(Min, Max, SHA1_SIZE, ASCII);
+    BigIntReducer reducer(Min, Max, SHA1_SIZE, ASCII);
 
     uint8_t hash[SHA1_SIZE];
     std::vector<char> reduced(Max + 1);
