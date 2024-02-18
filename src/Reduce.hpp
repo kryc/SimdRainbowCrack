@@ -24,7 +24,7 @@ public:
         const size_t Min,
         const size_t Max,
         const size_t HashLength,
-        const std::string Charset
+        const std::string& Charset
     ) : m_Min(Min),
         m_Max(Max),
         m_HashLength(HashLength),
@@ -51,7 +51,7 @@ public:
         const size_t Min,
         const size_t Max,
         const size_t HashLength,
-        const std::string Charset
+        const std::string& Charset
     ) : Reducer(Min, Max, HashLength, Charset)
     {
         m_MaxIndex = WordGenerator::WordLengthIndex(Max + 1, Charset);

@@ -50,7 +50,7 @@ public:
     bool ValidateConfig(void);
     void SetPath(std::filesystem::path Path) { m_Path = Path; };
     std::filesystem::path GetPath(void) const { return m_Path; };
-    void SetAlgorithm(const std::string Algorithm) { m_Algorithm = ParseHashAlgorithm(Algorithm.c_str()); };
+    void SetAlgorithm(const std::string& Algorithm) { m_Algorithm = ParseHashAlgorithm(Algorithm.c_str()); };
     const std::string GetAlgorithmString(void) const { return HashAlgorithmToString(m_Algorithm); };
     const HashAlgorithm GetAlgorithm(void) const { return m_Algorithm; };
     void SetMin(const size_t Min) { m_Min = Min; };
@@ -68,10 +68,10 @@ public:
     void SetType(const std::string Type);
     std::string GetType(void) const { return m_TableType == TypeCompressed ? "Compressed" : "Uncompressed";  };
     bool TableExists(void) const { return std::filesystem::exists(m_Path); };
-    bool IsTableFile(void);
-    bool ValidTable(void) { return TableExists() && IsTableFile(); };
+    bool IsTableFile(void) const;
+    bool ValidTable(void) const { return TableExists() && IsTableFile(); };
     bool LoadTable(void);
-    bool Complete(void) { return m_ThreadsCompleted == m_Threads; };
+    bool Complete(void) const { return m_ThreadsCompleted == m_Threads; };
     void Crack(std::string& Hash);
 private:
     void StoreTableHeader(void) const;

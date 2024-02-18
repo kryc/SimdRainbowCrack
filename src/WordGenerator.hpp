@@ -36,11 +36,11 @@ public:
     WordGenerator(const std::string& Charset) : m_Charset(Charset) {};
     WordGenerator(const std::string& Charset, std::string Prefix, std::string Postfix)
         : m_Charset(Charset),m_Prefix(Prefix),m_Postfix(Postfix) {};
-    static std::string GenerateWord(const size_t Value, const std::string& Charset, const bool Reverse = true);
-    const std::string Generate(const size_t Value, const bool Reverse = true);
-    static std::string GenerateWord(const mpz_class Value, const std::string& Charset, const bool Reverse = true);
-    static size_t GenerateWord(char * Destination, const size_t DestSize, const mpz_class& Value, const std::string& Charset);
-    const std::string Generate(const mpz_class Value, const bool Reverse = true);
+    static std::string GenerateWord(const size_t Value, const std::string& Charset, const bool Reverse = false);
+    const std::string Generate(const size_t Value, const bool Reverse = false);
+    static std::string GenerateWord(const mpz_class& Value, const std::string& Charset, const bool Reverse = false);
+    static size_t GenerateWord(char * Destination, const size_t DestSize, const mpz_class& Value, const std::string& Charset, const bool Reverse = false);
+    const std::string Generate(const mpz_class& Value, const bool Reverse = false);
     static const std::vector<uint8_t> GenerateParsingLookupTable(const std::string& Charset);
     const std::vector<uint8_t> GenerateParsingLookupTable(void) const { return GenerateParsingLookupTable(m_Charset); };
     static const mpz_class Parse(const std::string& Word, const std::string& Charset);

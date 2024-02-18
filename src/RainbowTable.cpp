@@ -271,7 +271,7 @@ RainbowTable::StoreTableHeader(
 bool
 RainbowTable::IsTableFile(
     void
-)
+) const
 {
     TableHeader hdr;
     std::ifstream fs(m_Path, std::ios::binary);

@@ -53,7 +53,7 @@ WordGenerator::Generate(
 //
 std::string 
 WordGenerator::GenerateWord(
-    const mpz_class Value,
+    const mpz_class& Value,
     const std::string& Charset,
     const bool Reverse
 )
@@ -84,10 +84,11 @@ WordGenerator::GenerateWord(
 //
 size_t
 WordGenerator::GenerateWord(
-    char * Destination,
+    char* Destination,
     const size_t DestSize,
     const mpz_class& Value,
-    const std::string& Charset
+    const std::string& Charset,
+    const bool Reverse
 )
 {
     mpz_class i(Value);
@@ -105,12 +106,17 @@ WordGenerator::GenerateWord(
         i = (i - 1) / Charset.length();
     }
 
+    if (Reverse)
+    {
+        std::reverse(Destination, Destination + length);
+    }
+
     return length;
 }
 
 const std::string
 WordGenerator::Generate(
-    const mpz_class Value,
+    const mpz_class& Value,
     const bool Reverse
 )
 {
