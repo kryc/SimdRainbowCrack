@@ -51,8 +51,9 @@ int main(
     size_t offset = rand() % rainbow.GetLength();
     std::cout << "Using offset " << offset << " in chain " << chain << std::endl;
 
-    mpz_class counter = chain;
-    auto start = WordGenerator::GenerateWord(counter, rainbow.GetCharset());
+    mpz_class counter = WordGenerator::WordLengthIndex(rainbow.GetMin(), rainbow.GetCharset());
+    counter += chain;
+    auto start = WordGenerator::GenerateWord(counter, rainbow.GetCharset(), false);
     std::cout << "Start: '" << start << "'" << std::endl;
 
     FILE* fh = fopen(argv[1], "r");
@@ -72,24 +73,33 @@ int main(
     std::vector<uint8_t> hash(hashsize);
     std::vector<char> reduced(rainbow.GetMax());
     
-    memcpy(&reduced[0], &start[0], start.size());
-    size_t length = start.size();
-
     BigIntReducer reducer(rainbow.GetMin(), rainbow.GetMax(), hashsize, rainbow.GetCharset());
 
-    for (size_t i = 0; i < offset; i++)
+    size_t length = start.size();
+    memcpy(&reduced[0], start.c_str(), length);
+
+    for (size_t i = 0; i < rainbow.GetLength(); i++)
     {
-        SHA1((const uint8_t*)&reduced[0], length, &hash[0]);
+        SHA1((uint8_t*)&reduced[0], length, &hash[0]);
         length = reducer.Reduce(&reduced[0], rainbow.GetMax(), &hash[0], i);
+        if (i == offset)
+        {
+            std::cout << "Output: '" << std::string(&reduced[0], &reduced[length]) << "'" << std::endl;
+            SHA1((const uint8_t*)&reduced[0], length, &hash[0]);
+                
+            std::cout << "Hash: ";
+            for (size_t i = 0; i < hashsize; i++)
+            {
+                printf("%0X", hash[i]);
+            }
+            std::cout << std::endl;
+        }
     }
 
-    std::cout << "Output: '" << std::string(&reduced[0], &reduced[length]) << "'" << std::endl;
-    SHA1((const uint8_t*)&reduced[0], length, &hash[0]);
-    std::cout << "Hash: ";
-    for (size_t i = 0; i < hashsize; i++)
+    if (memcmp(&reduced[0], &end[0], rainbow.GetMax()) != 0)
     {
-        printf("%0X", hash[i]);
+        std::cerr << "Non-matching endpoints!" << std::endl;
+        // std::cerr << reduced << " != " << start << std::endl
     }
-    std::cout << std::endl;
 
 }

@@ -11,6 +11,7 @@
 
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <string>
 
 #include "DispatchQueue.hpp"
@@ -44,9 +45,11 @@ typedef struct  __attribute__((__packed__)) _TableHeader
 class RainbowTable
 {
 public:
-    void InitAndRun(void);
+    ~RainbowTable(void);
+    void InitAndRunBuild(void);
     bool ValidateConfig(void);
     void SetPath(std::filesystem::path Path) { m_Path = Path; };
+    std::filesystem::path GetPath(void) const { return m_Path; };
     void SetAlgorithm(const std::string Algorithm) { m_Algorithm = ParseHashAlgorithm(Algorithm.c_str()); };
     const std::string GetAlgorithmString(void) const { return HashAlgorithmToString(m_Algorithm); };
     const HashAlgorithm GetAlgorithm(void) const { return m_Algorithm; };
@@ -66,14 +69,18 @@ public:
     std::string GetType(void) const { return m_TableType == TypeCompressed ? "Compressed" : "Uncompressed";  };
     bool TableExists(void) const { return std::filesystem::exists(m_Path); };
     bool IsTableFile(void);
+    bool ValidTable(void) { return TableExists() && IsTableFile(); };
     bool LoadTable(void);
     bool Complete(void) { return m_ThreadsCompleted == m_Threads; };
+    void Crack(std::string& Hash);
 private:
     void StoreTableHeader(void) const;
     void GenerateBlock(const size_t ThreadId, const size_t BlockId);
     void SaveBlock(const size_t BlockId, const std::vector<Chain> Block);
     void WriteBlock(const size_t BlockId, const ChainBlock& Block);
     void ThreadCompleted(const size_t ThreadId);
+    std::optional<std::string> ValidateChain(const size_t ChainIndex, const uint8_t* Hash);
+    // General purpose
     std::filesystem::path m_Path;
     bool m_PathLoaded = false;
     HashAlgorithm m_Algorithm = HashUnknown;
@@ -87,13 +94,19 @@ private:
     size_t m_HashWidth;
     size_t m_ChainWidth = 0;
     size_t m_Chains = 0;
-    size_t m_StartingChains = 0;
     TableType m_TableType = TypeCompressed;
+    // For building
+    size_t m_StartingChains = 0;
     FILE* m_WriteHandle = NULL;
     size_t m_NextWriteBlock = 0;
     std::map<size_t, ChainBlock> m_WriteCache;
     dispatch::DispatchPoolPtr m_DispatchPool;
     size_t m_ThreadsCompleted = 0;
+    // For cracking
+    uint8_t* m_MappedTable = nullptr;
+    FILE* m_MappedTableFd = nullptr;
+    size_t m_MappedTableSize;
+    size_t m_FalsePositives = 0;
 };
 
 #endif /* RainbowTable_hpp */

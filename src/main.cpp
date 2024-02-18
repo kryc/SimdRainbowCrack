@@ -28,7 +28,7 @@ main(
 )
 {
     RainbowTable rainbow;
-    std::string action;
+    std::string action, target;
 
     if (argc < 2)
     {
@@ -88,9 +88,13 @@ main(
         {
             rainbow.SetAlgorithm("sha256");
         }
-        else
+        else if (rainbow.GetPath().empty())
         {
             rainbow.SetPath(argv[i]);
+        }
+        else if (action == "crack")
+        {
+            target = argv[i];
         }
     }
 
@@ -110,10 +114,26 @@ main(
         auto mainDispatcher = dispatch::CreateAndEnterDispatcher(
             "main",
             dispatch::bind(
-                &RainbowTable::InitAndRun,
+                &RainbowTable::InitAndRunBuild,
                 &rainbow
             )
         );
+    }
+    else if (action == "crack")
+    {
+        if (!rainbow.ValidTable())
+        {
+            std::cerr << "Provided table not found or invalid" << std::endl;
+            return 1;
+        }
+
+        if (!rainbow.LoadTable())
+        {
+            std::cerr << "Error loading table file" << std::endl;
+            return 1;
+        }
+
+        rainbow.Crack(target);
     }
     else if (action == "info")
     {
