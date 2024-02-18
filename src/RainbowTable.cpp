@@ -538,4 +538,9 @@ RainbowTable::~RainbowTable(
     {
         munmap(m_MappedTable, m_MappedTableSize);
     }
+
+    if (m_MappedTableFd != nullptr)
+    {
+        fclose(m_MappedTableFd);
+    }
 }
