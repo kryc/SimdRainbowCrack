@@ -94,7 +94,7 @@ RainbowTable::GenerateBlock(
         return;
     }
 
-    BigIntReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
+    ModuloReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
     std::vector<Chain> block;
     block.reserve(m_Blocksize);
 
@@ -334,6 +334,13 @@ RainbowTable::LoadTable(
     m_ChainWidth = GetChainWidth();
     m_Chains = (std::filesystem::file_size(m_Path) - sizeof(TableHeader)) / m_ChainWidth;
 
+    size_t dataSize = fileSize - sizeof(TableHeader);
+    if (dataSize % m_ChainWidth != 0)
+    {
+        std::cerr << "Invalid or currupt table file. Data not a multiple of chain width" << std::endl;
+        return false;
+    }
+
     return true;
 }
 
@@ -552,7 +559,7 @@ RainbowTable::Crack(
 
     std::vector<uint8_t> hash(m_HashWidth);
     std::vector<char> reduced(m_Max);
-    BigIntReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
+    ModuloReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
     size_t length;
 
     // Mmap the table
@@ -603,7 +610,7 @@ RainbowTable::ValidateChain(
     size_t length;
     std::vector<uint8_t> hash(m_HashWidth);
     std::vector<char> reduced(m_Max);
-    BigIntReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
+    ModuloReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
     mpz_class counter = WordGenerator::WordLengthIndex(m_Min, m_Charset);
     counter += ChainIndex;
 
