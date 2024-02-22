@@ -73,7 +73,7 @@ int main(
     std::vector<uint8_t> hash(hashsize);
     std::vector<char> reduced(rainbow.GetMax());
     
-    BigIntReducer reducer(rainbow.GetMin(), rainbow.GetMax(), hashsize, rainbow.GetCharset());
+    BasicModuloReducer reducer(rainbow.GetMin(), rainbow.GetMax(), hashsize, rainbow.GetCharset());
 
     size_t length = start.size();
     memcpy(&reduced[0], start.c_str(), length);

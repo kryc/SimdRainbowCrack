@@ -34,7 +34,7 @@ ComputeChain(
     
     mpz_class counter;
 
-    ModuloReducer reducer(Min, Max, SHA1_SIZE, ASCII);
+    BytewiseReducer reducer(Min, Max, SHA1_SIZE, ASCII);
 
     // Calculate lower bound
     counter = WordGenerator::WordLengthIndex(Min, ASCII);
@@ -47,7 +47,7 @@ ComputeChain(
         words.SetLength(i, length);
         words[i][length] = '\0';
         std::string start((char*)words[i]);
-        ret.push_back(Chain(counter, std::move(start), Length));
+        ret.push_back(Chain(counter, start, Length));
         counter++;
     }
 
@@ -92,7 +92,7 @@ ValidateChain(
     size_t length;
     uint8_t hash[SHA1_SIZE];
     std::vector<char> reduced(Max + 1);
-    ModuloReducer reducer(Min, Max, SHA1_SIZE, ASCII);
+    BytewiseReducer reducer(Min, Max, SHA1_SIZE, ASCII);
 
     length = Chain.Start().size();
     memcpy(&reduced[0], Chain.Start().c_str(), length);
@@ -128,7 +128,7 @@ CheckChain(
     // Add the index for this chain
     counter += start;
 
-    BigIntReducer reducer(Min, Max, SHA1_SIZE, ASCII);
+    BasicModuloReducer reducer(Min, Max, SHA1_SIZE, ASCII);
 
     uint8_t hash[SHA1_SIZE];
     std::vector<char> reduced(Max + 1);

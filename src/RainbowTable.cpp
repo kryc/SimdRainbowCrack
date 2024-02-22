@@ -93,7 +93,7 @@ RainbowTable::GenerateBlock(
         return;
     }
 
-    BigIntReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
+    ModuloReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
     std::vector<Chain> block;
     block.reserve(m_Blocksize);
 
@@ -457,7 +457,7 @@ RainbowTable::Crack(
 
     std::vector<uint8_t> hash(m_HashWidth);
     std::vector<char> reduced(m_Max);
-    BigIntReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
+    ModuloReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
     size_t length;
 
     // Perform check
@@ -510,7 +510,7 @@ RainbowTable::ValidateChain(
     size_t length;
     std::vector<uint8_t> hash(m_HashWidth);
     std::vector<char> reduced(m_Max);
-    BigIntReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
+    ModuloReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
     mpz_class counter = WordGenerator::WordLengthIndex(m_Min, m_Charset);
     counter += ChainIndex;
 
