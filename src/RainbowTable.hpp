@@ -73,13 +73,18 @@ public:
     bool LoadTable(void);
     bool Complete(void) const { return m_ThreadsCompleted == m_Threads; };
     void Crack(std::string& Hash);
+    const size_t ChainWidthForType(const TableType Type) const { return Type == TypeCompressed ? m_Max : sizeof(uint64_t) + m_Max; };
+    const size_t GetChainWidth(void) const { return ChainWidthForType(m_TableType); };
+    void DoHash(const uint8_t* Data, const size_t Length, uint8_t* Digest);
 private:
     void StoreTableHeader(void) const;
     void GenerateBlock(const size_t ThreadId, const size_t BlockId);
     void SaveBlock(const size_t BlockId, const std::vector<Chain> Block);
     void WriteBlock(const size_t BlockId, const ChainBlock& Block);
     void ThreadCompleted(const size_t ThreadId);
+    const size_t FindEndpoint(const char* Endpoint, const size_t Length);
     std::optional<std::string> ValidateChain(const size_t ChainIndex, const uint8_t* Hash);
+    bool MapTable(const bool ReadOnly = true);
     // General purpose
     std::filesystem::path m_Path;
     bool m_PathLoaded = false;

@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include <sys/mman.h>
+#include <openssl/md5.h>
 #include <openssl/sha.h>
 
 #include "SimdHashBuffer.hpp"
@@ -43,7 +44,7 @@ RainbowTable::InitAndRunBuild(
     {
         StoreTableHeader();
         m_HashWidth = GetHashWidth(m_Algorithm);
-        m_ChainWidth = m_TableType == TypeCompressed ? m_Max : m_Max * 2;
+        m_ChainWidth = GetChainWidth();
         m_Chains = (std::filesystem::file_size(m_Path) - sizeof(TableHeader)) / m_ChainWidth;
     }
 
@@ -185,15 +186,17 @@ RainbowTable::WriteBlock(
 {
     // Create a byte buffer so we can do it on one shot
     std::vector<uint8_t> buffer;
-    size_t buffersize = m_TableType == TypeCompressed ? m_Max * m_Blocksize : m_Max * 2 * m_Blocksize;
+    size_t buffersize = m_ChainWidth * m_Blocksize;
     buffer.resize(buffersize);
     uint8_t* bufferptr = &buffer[0];
+    uint64_t index;
     for (auto& chain : Block)
     {
         if (m_TableType == TypeUncompressed)
         {
-            memcpy(bufferptr, chain.Start().c_str(), chain.Start().size());
-            bufferptr += m_Max;
+            index = chain.Index().get_ui();
+            *((uint64_t*)bufferptr) = index;
+            bufferptr += sizeof(uint64_t);
         }
         memcpy(bufferptr, chain.End().c_str(), chain.End().size());
         bufferptr += m_Max;
@@ -328,7 +331,7 @@ RainbowTable::LoadTable(
     m_Length = hdr.length;
     m_Charset = std::string(&hdr.charset[0], &hdr.charset[hdr.charsetlen]);
     m_HashWidth = GetHashWidth(m_Algorithm);
-    m_ChainWidth = m_TableType == TypeCompressed ? m_Max : m_Max * 2;
+    m_ChainWidth = GetChainWidth();
     m_Chains = (std::filesystem::file_size(m_Path) - sizeof(TableHeader)) / m_ChainWidth;
 
     return true;
@@ -337,8 +340,7 @@ RainbowTable::LoadTable(
 const size_t
 RainbowTable::GetCount(void) const
 {
-    size_t chainwidth = m_TableType == TypeCompressed ? m_Max : m_Max * 2;
-    return (std::filesystem::file_size(m_Path) - sizeof(TableHeader)) / chainwidth;
+    return (std::filesystem::file_size(m_Path) - sizeof(TableHeader)) / GetChainWidth();
 }
 
 bool
@@ -427,6 +429,120 @@ RainbowTable::ThreadCompleted(
     }
 }
 
+bool
+RainbowTable::MapTable(
+    const bool ReadOnly
+)
+{
+    m_MappedTableSize = std::filesystem::file_size(m_Path) - sizeof(TableHeader);
+    m_MappedTableFd = fopen(m_Path.c_str(), "r");
+    if (m_MappedTableFd == nullptr)
+    {
+        std::cerr << "Unable to open a handle to the table file" << std::endl;
+        return false;
+    }
+    // std::cerr << m_MappedTableSize << std::endl;
+    int flags = 0;
+    int prot = PROT_READ;
+    if (ReadOnly)
+    {
+        flags = MAP_PRIVATE;
+    }
+    else
+    {
+        prot |= PROT_WRITE;
+    }
+    
+    m_MappedTable = (uint8_t*)mmap(nullptr, m_MappedTableSize, prot, flags, fileno(m_MappedTableFd), 0);
+    if (m_MappedTable == MAP_FAILED)
+    {
+        std::cerr << "Unable to map table into memory: " << strerror(errno) << std::endl;
+        return false;
+    }
+    auto ret = madvise(m_MappedTable, m_MappedTableSize, MADV_RANDOM | MADV_WILLNEED);
+    if (ret != 0)
+    {
+        std::cerr << "Madvise not happy" << std::endl;
+    }
+    return true;
+}
+
+void
+RainbowTable::DoHash(
+    const uint8_t* Data,
+    const size_t Length,
+    uint8_t* Digest
+)
+{
+    switch (m_Algorithm)
+    {
+    case HashMd5:
+        MD5(Data, Length, Digest);
+        break;
+    case HashSha1:
+        SHA1(Data, Length, Digest);
+        break;
+    case HashSha256:
+        SHA256(Data, Length, Digest);
+        break;
+    default:
+        break;
+    }
+}
+
+const size_t
+RainbowTable::FindEndpoint(
+    const char* Endpoint,
+    const size_t Length
+)
+{
+    size_t skiplen = GetChainWidth();
+    if (m_TableType == TypeCompressed)
+    {
+        // Linear search
+        uint8_t* endpoint = m_MappedTable + sizeof(TableHeader);
+        for (
+            size_t c = 0;
+            c < m_Chains;
+            c++, endpoint += skiplen)
+        {
+            if (memcmp(endpoint, Endpoint, Length) == 0)
+            {
+                return c;
+            }
+        }
+    }
+    else
+    {
+        // Binary search
+        size_t low = 0;
+        size_t high = m_Chains - 1;
+        uint8_t* startendpoint = m_MappedTable + sizeof(TableHeader) + sizeof(uint64_t);
+        while (low <= high)
+        {
+            size_t mid = (low + high) / 2;
+            if (mid > m_Chains)
+                break;
+            uint8_t* endpoint = startendpoint + (skiplen * mid);
+            int cmp = memcmp(endpoint, Endpoint, Length);
+            if (cmp == 0)
+            {
+                uint64_t* index = (uint64_t*)endpoint - 1;
+                return (size_t)*index;
+            }
+            else if (cmp < 0)
+            {
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid - 1;
+            }
+        }
+    }
+    return (size_t)-1;
+}
+
 void
 RainbowTable::Crack(
     std::string& Hash
@@ -434,31 +550,16 @@ RainbowTable::Crack(
 {
     auto target = Util::ParseHex(Hash);
 
-    // Mmap the table
-    m_MappedTableSize = std::filesystem::file_size(m_Path) - sizeof(TableHeader);
-    m_MappedTableFd = fopen(m_Path.c_str(), "r");
-    if (m_MappedTableFd == nullptr)
-    {
-        std::cerr << "Unable to open a handle to the table file" << std::endl;
-        return;
-    }
-    // std::cerr << m_MappedTableSize << std::endl;
-    m_MappedTable = (uint8_t*)mmap(nullptr, m_MappedTableSize, PROT_READ, MAP_PRIVATE, fileno(m_MappedTableFd), 0);
-    if (m_MappedTable == MAP_FAILED)
-    {
-        std::cerr << "Unable to map table into memory: " << strerror(errno) << std::endl;
-        return;
-    }
-    auto ret = madvise(m_MappedTable, m_MappedTableSize, MADV_RANDOM | MADV_WILLNEED);
-    if (ret != 0)
-    {
-        std::cerr << "Madvise not happy" << std::endl;
-    }
-
     std::vector<uint8_t> hash(m_HashWidth);
     std::vector<char> reduced(m_Max);
     BigIntReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
     size_t length;
+
+    // Mmap the table
+    if (!MapTable(true))
+    {
+        return;
+    }
 
     // Perform check
     for (ssize_t i = m_Length - 1; i >= 0; i--)
@@ -468,36 +569,28 @@ RainbowTable::Crack(
         for (size_t j = i; j < m_Length - 1; j++)
         {
             length = reducer.Reduce(&reduced[0], m_Max, &hash[0], j);
-            SHA1((uint8_t*)&reduced[0], length, &hash[0]);
+            DoHash((uint8_t*)&reduced[0], length, &hash[0]);
         }
 
         // Final reduction
         length = reducer.Reduce(&reduced[0], m_Max, &hash[0], m_Length - 1);
     
         // Check end, if it matches, we can perform one full chain to see if we find it
-        uint8_t* endpoint = m_TableType == TypeCompressed ? m_MappedTable + sizeof(TableHeader) : m_MappedTable + sizeof(TableHeader) + m_Max;
-        size_t skiplen = m_TableType == TypeCompressed ? m_Max : m_Max * 2;
-        for (
-            size_t c = 0;
-            c < m_Chains;
-            c++, endpoint += skiplen)
+        size_t index = FindEndpoint(&reduced[0], length);
+        if (index != (size_t)-1)
         {
-            if (memcmp(endpoint, &reduced[0], length) == 0)
+            auto match = ValidateChain(index, &target[0]);
+            if (match.has_value())
             {
-                auto match = ValidateChain(c, &target[0]);
-                if (match.has_value())
-                {
-                    auto hashstr = Util::ToHex(&target[0], m_HashWidth);
-                    std::cout << hashstr << ' ' << match.value() << std::endl;
-                    return;
-                }
+                auto hashstr = Util::ToHex(&target[0], m_HashWidth);
+                std::cout << hashstr << ' ' << match.value() << std::endl;
+                return;
             }
             else
             {
                 m_FalsePositives++;
             }
         }
-        
     }
 }
 
@@ -520,7 +613,7 @@ RainbowTable::ValidateChain(
     
     for (size_t i = 0; i < m_Length; i++)
     {
-        SHA1((uint8_t*)&reduced[0], length, &hash[0]);
+        DoHash((uint8_t*)&reduced[0], length, &hash[0]);
         if (memcmp(Target, &hash[0], m_HashWidth) == 0)
         {
             return std::string(&reduced[0], &reduced[length]);
