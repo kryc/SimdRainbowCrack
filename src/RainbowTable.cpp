@@ -328,8 +328,15 @@ RainbowTable::LoadTable(
     m_Length = hdr.length;
     m_Charset = std::string(&hdr.charset[0], &hdr.charset[hdr.charsetlen]);
     m_HashWidth = GetHashWidth(m_Algorithm);
-    m_ChainWidth = m_TableType == TypeCompressed ? m_Max : m_Max * 2;
+    m_ChainWidth = m_TableType == TypeCompressed ? m_Max : sizeof(uint64_t) + m_Max;
     m_Chains = (std::filesystem::file_size(m_Path) - sizeof(TableHeader)) / m_ChainWidth;
+
+    size_t dataSize = fileSize - sizeof(TableHeader);
+    if (dataSize % m_ChainWidth != 0)
+    {
+        std::cerr << "Invalid or currupt table file. Data not a multiple of chain width" << std::endl;
+        return false;
+    }
 
     return true;
 }
