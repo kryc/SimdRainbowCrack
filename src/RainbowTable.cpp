@@ -94,7 +94,7 @@ RainbowTable::GenerateBlock(
         return;
     }
 
-    ModuloReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
+    auto reducer = GetReducer();
     std::vector<Chain> block;
     block.reserve(m_Blocksize);
 
@@ -136,7 +136,7 @@ RainbowTable::GenerateBlock(
             for (size_t h = 0; h < SimdLanes(); h++)
             {
                 const uint8_t* hash = hashes[h];
-                auto length = reducer.Reduce((char*)words[h], m_Max, hash, i);
+                auto length = reducer->Reduce((char*)words[h], m_Max, hash, i);
                 words.SetLength(h, length);
             }
         }
@@ -550,6 +550,22 @@ RainbowTable::FindEndpoint(
     return (size_t)-1;
 }
 
+std::unique_ptr<Reducer>
+RainbowTable::GetReducer(void)
+const
+{
+    // For tables where the min and max are the same
+    // (we are reducing to a constant length), we can
+    // use the significantly faster BytewiseReducer
+    if (m_Min == m_Max)
+    {
+        return std::make_unique<BytewiseReducer>(m_Min, m_Max, m_HashWidth, m_Charset);
+    }
+    // Otherwise we need to fall back to the much slower
+    // modulo reducer which requires big integer division
+    return std::make_unique<ModuloReducer>(m_Min, m_Max, m_HashWidth, m_Charset);
+}
+
 void
 RainbowTable::Crack(
     std::string& Hash
@@ -559,7 +575,7 @@ RainbowTable::Crack(
 
     std::vector<uint8_t> hash(m_HashWidth);
     std::vector<char> reduced(m_Max);
-    ModuloReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
+    auto reducer = GetReducer();
     size_t length;
 
     // Mmap the table
@@ -575,12 +591,12 @@ RainbowTable::Crack(
 
         for (size_t j = i; j < m_Length - 1; j++)
         {
-            length = reducer.Reduce(&reduced[0], m_Max, &hash[0], j);
+            length = reducer->Reduce(&reduced[0], m_Max, &hash[0], j);
             DoHash((uint8_t*)&reduced[0], length, &hash[0]);
         }
 
         // Final reduction
-        length = reducer.Reduce(&reduced[0], m_Max, &hash[0], m_Length - 1);
+        length = reducer->Reduce(&reduced[0], m_Max, &hash[0], m_Length - 1);
     
         // Check end, if it matches, we can perform one full chain to see if we find it
         size_t index = FindEndpoint(&reduced[0], length);
@@ -610,7 +626,7 @@ RainbowTable::ValidateChain(
     size_t length;
     std::vector<uint8_t> hash(m_HashWidth);
     std::vector<char> reduced(m_Max);
-    ModuloReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
+    auto reducer = GetReducer();
     mpz_class counter = WordGenerator::WordLengthIndex(m_Min, m_Charset);
     counter += ChainIndex;
 
@@ -625,7 +641,7 @@ RainbowTable::ValidateChain(
         {
             return std::string(&reduced[0], &reduced[length]);
         }
-        length = reducer.Reduce(&reduced[0], m_Max, &hash[0], i);
+        length = reducer->Reduce(&reduced[0], m_Max, &hash[0], i);
     }
     return {};
 }

@@ -21,14 +21,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # set compiler flags
 # set(STD_COMPILE_FLAGS "-Wall -Werror -g -O3 -fsanitize=address")
-set(STD_COMPILE_FLAGS "-Wall -Werror -g -O3")
+set(STD_COMPILE_FLAGS "-Wall -Werror -g -O3 -Wno-deprecated-declarations")
 set(STD_LINKER_FLAGS "-lpthread -lgmpxx -lgmp -lcrypto")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${STD_COMPILE_FLAGS}")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${STD_COMPILE_FLAGS}")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${STD_LINKER_FLAGS}")
 
-set(CMAKE_CXX_FLAGS_DEBUG "-g -ggdb -O0 -fno-omit-frame-pointer -DDEBUG -Wno-error=deprecated-declarations")
+set(CMAKE_CXX_FLAGS_DEBUG "-g -ggdb -O0 -fno-omit-frame-pointer -DDEBUG")
 
 if(APPLE)
     set(HOMEBREW_PREFIX "/usr/local" CACHE PATH "Path to Homebrew installation")

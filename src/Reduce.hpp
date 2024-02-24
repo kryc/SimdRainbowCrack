@@ -46,6 +46,7 @@ public:
         const uint8_t* Hash,
         const size_t Iteration
     ) = 0;
+    virtual ~Reducer() {};
 protected:
     // A basic entropy extension function
     // It replaces the data in a destination buffer
@@ -105,6 +106,7 @@ public:
             Iteration
         );
     }
+    
 protected:
 
     inline size_t PerformReduction(
@@ -134,7 +136,7 @@ protected:
     mpz_class m_IndexRange;
 };
 
-class ModuloReducer : public BasicModuloReducer
+class ModuloReducer final : public BasicModuloReducer
 {
 public:
     ModuloReducer(
@@ -219,48 +221,23 @@ private:
     uint32_t m_MsbMask;
 };
 
-class BytewiseReducer : public Reducer
+class BytewiseReducer final : public Reducer
 {
 public:
-    using Reducer::Reducer;
-    static uint8_t SelectValueInRange(
-        const uint8_t* Buffer,
-        const size_t Length,
-        size_t* Offset,
-        const uint8_t Max,
-        const size_t Range
-    )
+    BytewiseReducer(
+        const size_t Min,
+        const size_t Max,
+        const size_t HashLength,
+        const std::string& Charset
+    ) : Reducer(Min, Max, HashLength, Charset)
     {
-        // Loop forwards to find matching value range
-        while (*Offset < Length)
-        {
-            size_t i = (*Offset)++;
-            if (Buffer[i] >= Range)
-            {
-                continue;
-            }
-            return Buffer[i] % (Max + 1);
-        }
-        return -1;
-    }
-    static inline size_t CalculateModMax(
-        const size_t Max
-    )
-    {
-        return floor(pow(2, 8) / (Max + 1)) * (Max + 1);
-    }
-    static inline uint8_t SelectValue(
-        const uint8_t* Buffer,
-        const size_t Length,
-        size_t*      Offset,
-        const uint8_t Min,
-        const uint8_t Max
-    )
-    {
-        // Calculate maximum value we can modulo
-        uint8_t diff = Max - Min;
-        size_t modmax = CalculateModMax(diff);
-        return Min + SelectValueInRange(Buffer, Length, Offset, diff, modmax);
+        assert(Min == Max);
+        // Doing a simple modulo on each byte will introduce
+        // a modulo bias. We need to calculate the maximum
+        // value that a multiple of the number of characters
+        // will fit into a single uint8_t. We call this modmax.
+        size_t maxval = m_Charset.size() - 1;
+        m_ModMax = floor(pow(2, 8) / (maxval + 1)) * (maxval + 1);
     }
     
     size_t Reduce(
@@ -270,64 +247,32 @@ public:
         const size_t Iteration
     ) override
     {
+        uint8_t buffer[m_HashLength];
         // Copy hash to buffer
-        memcpy(m_Buffer, Hash, m_HashLength);
-        // Perform initial entropy extension
-        for (size_t i = m_HashLengthWords; i < sizeof(m_Buffer)/sizeof(uint32_t); i++)
-        {
-            m_Buffer[i] = rotl(m_Buffer[i - m_HashLengthWords] ^ m_Buffer[i - 2], 1);
-        }
-        // Get number of characters
-        size_t characterCount;
-        size_t bufferOffset = 0;
-        for (;;)
-        {
-            characterCount = SelectValue(
-                (uint8_t*)m_Buffer,
-                sizeof(m_Buffer),
-                &bufferOffset,
-                m_Min,
-                m_Max
-            );
-            if (bufferOffset != sizeof(m_Buffer))
-            {
-                break;
-            }
-            else
-            {
-                ExtendEntropy(m_Buffer, 6);
-                bufferOffset = 0;
-            }
-        }
+        memcpy(buffer, Hash, m_HashLength);
         // Loop and get all characters
+        size_t bufferOffset = 0;
         size_t count = 0;
-        size_t max = m_Charset.size() - 1;
-        size_t modmax = CalculateModMax(max);
-        // std::cout << max << ' ' << modmax << std::endl;
-        while (count < characterCount)
+        size_t charsetSize = m_Charset.size();
+        
+        while (count < m_Max /* m_Min == m_Max */)
         {
-            uint8_t index = SelectValueInRange(
-                (uint8_t*)m_Buffer,
-                sizeof(m_Buffer),
-                &bufferOffset,
-                max,
-                modmax
-            );
-            if (bufferOffset != sizeof(m_Buffer))
+            if (bufferOffset == m_HashLength)
             {
-                Destination[count++] = m_Charset[index];
-            }
-            else
-            {
-                // std::cerr << "Extend" << std::endl;
-                ExtendEntropy(m_Buffer, 6);
+                ExtendEntropy((uint32_t*)buffer, m_HashLengthWords);
                 bufferOffset = 0;
+            }
+
+            uint8_t next = buffer[bufferOffset++];
+            if (next < m_ModMax)
+            {
+                Destination[count++] = m_Charset[next % charsetSize];
             }
         }
         return count;
     };
 private:
-    uint32_t m_Buffer[6];
+    size_t m_ModMax;
 };
 
 #endif /* Reduce_hpp */

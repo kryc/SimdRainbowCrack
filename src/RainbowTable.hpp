@@ -85,6 +85,7 @@ private:
     const size_t FindEndpoint(const char* Endpoint, const size_t Length);
     std::optional<std::string> ValidateChain(const size_t ChainIndex, const uint8_t* Hash);
     bool MapTable(const bool ReadOnly = true);
+    std::unique_ptr<Reducer> GetReducer(void) const;
     // General purpose
     std::filesystem::path m_Path;
     bool m_PathLoaded = false;
