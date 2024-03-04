@@ -76,6 +76,8 @@ public:
     const size_t ChainWidthForType(const TableType Type) const { return Type == TypeCompressed ? m_Max : sizeof(uint64_t) + m_Max; };
     const size_t GetChainWidth(void) const { return ChainWidthForType(m_TableType); };
     void DoHash(const uint8_t* Data, const size_t Length, uint8_t* Digest);
+    void Decompress(const std::filesystem::path& Destination);
+    void SortTable(void);
 private:
     void StoreTableHeader(void) const;
     void GenerateBlock(const size_t ThreadId, const size_t BlockId);

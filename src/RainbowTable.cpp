@@ -503,6 +503,9 @@ RainbowTable::FindEndpoint(
     const size_t Length
 )
 {
+    std::vector<char> comparitor;
+    comparitor.resize(m_Max);
+    memcpy(&comparitor[0], Endpoint, Length);
     size_t skiplen = GetChainWidth();
     if (m_TableType == TypeCompressed)
     {
@@ -513,7 +516,7 @@ RainbowTable::FindEndpoint(
             c < m_Chains;
             c++, endpoint += skiplen)
         {
-            if (memcmp(endpoint, Endpoint, Length) == 0)
+            if (memcmp(endpoint, &comparitor[0], m_Max) == 0)
             {
                 return c;
             }
@@ -531,7 +534,7 @@ RainbowTable::FindEndpoint(
             if (mid > m_Chains)
                 break;
             uint8_t* endpoint = startendpoint + (skiplen * mid);
-            int cmp = memcmp(endpoint, Endpoint, Length);
+            int cmp = memcmp(endpoint, &comparitor[0], m_Max);
             if (cmp == 0)
             {
                 uint64_t* index = (uint64_t*)endpoint - 1;
@@ -659,4 +662,66 @@ RainbowTable::~RainbowTable(
     {
         fclose(m_MappedTableFd);
     }
+}
+
+int SortCompare(
+    const void* Comp1,
+    const void* Comp2,
+    void* Arguments
+)
+{
+    return memcmp((uint8_t*)Comp1 + sizeof(uint64_t), (uint8_t*)Comp2 + sizeof(uint64_t), (size_t)Arguments);
+}
+
+void
+RainbowTable::SortTable(
+    void
+)
+{
+    if (!MapTable(true))
+    {
+        std::cerr << "Error mapping table for sort"  << std::endl;
+        return;
+    }
+
+    uint8_t* start = m_MappedTable + sizeof(TableHeader);
+    qsort_r(start, m_Count, GetChainWidth(), SortCompare, (void*)m_Max);
+}
+
+void
+RainbowTable::Decompress(
+    const std::filesystem::path& Destination
+)
+{
+    FILE* fhw;
+    TableHeader hdr;
+
+    if (!MapTable(true))
+    {
+        std::cerr << "Error mapping table"  << std::endl;
+        return;
+    }
+
+    hdr = *((TableHeader*)m_MappedTable);
+    hdr.type = TypeUncompressed;
+
+    fhw = fopen(Destination.c_str(), "w");
+    if (fhw == nullptr)
+    {
+        std::cerr << "Error opening desination table for write" << std::endl;
+        return;
+    }
+
+    fwrite(&hdr, sizeof(hdr), 1, fhw);
+    uint8_t* next = m_MappedTable + sizeof(TableHeader);
+    for (size_t index = 0; index < m_Chains; index++, next += m_Max)
+    {
+        fwrite(&index, sizeof(index), 1, fhw);
+        fwrite(next, m_Max, sizeof(uint8_t), fhw);
+    }
+    fclose(fhw);
+
+    RainbowTable newtable;
+    newtable.SetPath(Destination);
+    newtable.SortTable();
 }

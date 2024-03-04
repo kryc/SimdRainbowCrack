@@ -28,7 +28,7 @@ main(
 )
 {
     RainbowTable rainbow;
-    std::string action, target;
+    std::string action, target, destination;
 
     if (argc < 2)
     {
@@ -96,6 +96,10 @@ main(
         {
             target = argv[i];
         }
+        else if (action == "decompress")
+        {
+            destination = argv[i];
+        }
     }
 
     rainbow.SetCharset(ASCII);
@@ -134,6 +138,22 @@ main(
         }
 
         rainbow.Crack(target);
+    }
+    else if (action == "decompress")
+    {
+        if (!rainbow.ValidTable())
+        {
+            std::cerr << "Provided table not found or invalid" << std::endl;
+            return 1;
+        }
+
+        if (!rainbow.LoadTable())
+        {
+            std::cerr << "Error loading table file" << std::endl;
+            return 1;
+        }
+
+        rainbow.Decompress(destination);
     }
     else if (action == "info")
     {
