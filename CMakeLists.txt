@@ -21,7 +21,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # set compiler flags
 # set(STD_COMPILE_FLAGS "-Wall -Werror -g -O3 -fsanitize=address")
-set(STD_COMPILE_FLAGS "-Wall -Werror -g -O3 -Wno-deprecated-declarations")
+set(STD_COMPILE_FLAGS "-Wall -Werror -g -ggdb -O3 -Wno-deprecated-declarations")
 set(STD_LINKER_FLAGS "-lpthread -lgmpxx -lgmp -lcrypto")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${STD_COMPILE_FLAGS}")

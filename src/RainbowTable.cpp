@@ -80,8 +80,10 @@ RainbowTable::GenerateBlock(
 {
     size_t blockStartId = m_StartingChains + (m_Blocksize * BlockId);
 
+    std::cout << "start: " << blockStartId << std::endl;
+
     // Check if we should end
-    if (blockStartId > m_Count)
+    if (blockStartId >= m_Count)
     {
         dispatch::PostTaskToDispatcher(
             "main",
