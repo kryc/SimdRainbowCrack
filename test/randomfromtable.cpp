@@ -53,7 +53,7 @@ int main(
 
     mpz_class counter = WordGenerator::WordLengthIndex(rainbow.GetMin(), rainbow.GetCharset());
     counter += chain;
-    auto start = WordGenerator::GenerateWord(counter, rainbow.GetCharset(), false);
+    auto start = WordGenerator::GenerateWord(counter, rainbow.GetCharset());
     std::cout << "Start: '" << start << "'" << std::endl;
 
     FILE* fh = fopen(argv[1], "r");

@@ -633,7 +633,7 @@ RainbowTable::ValidateChain(
     mpz_class counter = WordGenerator::WordLengthIndex(m_Min, m_Charset);
     counter += ChainIndex;
 
-    auto start = WordGenerator::GenerateWord(counter,m_Charset, false);
+    auto start = WordGenerator::GenerateWord(counter,m_Charset);
     length = start.size();
     memcpy(&reduced[0], start.c_str(), length);
     
