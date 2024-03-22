@@ -1,3 +1,11 @@
+//
+//  WordGenerator.hpp
+//  SimdCrack
+//
+//  Created by Kryc on 20/01/2024.
+//  Copyright © 2020 Kryc. All rights reserved.
+//
+
 #include <algorithm>
 #include <cstdint>
 #include <iostream>
@@ -9,14 +17,11 @@
 
 #define D(val) (std::cout << "DBG: " << val << std::endl)
 
-//
 // Static
-//
 std::string
 WordGenerator::GenerateWord(
     const size_t Value,
-    const std::string& Charset,
-    const bool Reverse
+    const std::string& Charset
 )
 {
     std::string out;
@@ -30,32 +35,27 @@ WordGenerator::GenerateWord(
         out += Charset[i % Charset.length()];
         i /= Charset.length();
     }
-
-    if (Reverse)
-    {
-        std::reverse(std::begin(out), std::end(out));
-    }
      
     return out;
 }
 
-const std::string
-WordGenerator::Generate(
+// Static
+std::string
+WordGenerator::GenerateWordReversed(
     const size_t Value,
-    const bool Reverse
+    const std::string& Charset
 )
 {
-    return m_Prefix + GenerateWord(Value, m_Charset, Reverse) + m_Postfix;
+    std::string word = GenerateWord(Value, Charset);
+    std::reverse(std::begin(word), std::end(word));
+    return word;
 }
 
-//
 // Static
-//
 std::string 
 WordGenerator::GenerateWord(
     const mpz_class& Value,
-    const std::string& Charset,
-    const bool Reverse
+    const std::string& Charset
 )
 {
     std::string out;
@@ -71,24 +71,28 @@ WordGenerator::GenerateWord(
         i /= Charset.length();
     }
 
-    if (Reverse)
-    {
-        std::reverse(std::begin(out), std::end(out));
-    }
-     
     return out;
 }
 
-//
+// static
+std::string
+WordGenerator::GenerateWordReversed(
+    const mpz_class& Value,
+    const std::string& Charset
+)
+{
+    std::string word = GenerateWord(Value, Charset);
+    std::reverse(std::begin(word), std::end(word));
+    return word;
+}
+
 // Static
-//
-size_t
+const size_t
 WordGenerator::GenerateWord(
     char* Destination,
     const size_t DestSize,
     const mpz_class& Value,
-    const std::string& Charset,
-    const bool Reverse
+    const std::string& Charset
 )
 {
     mpz_class i(Value);
@@ -106,26 +110,76 @@ WordGenerator::GenerateWord(
         i = (i - 1) / Charset.length();
     }
 
-    if (Reverse)
-    {
-        std::reverse(Destination, Destination + length);
-    }
+    return length;
+}
 
+// Static
+const size_t
+WordGenerator::GenerateWordReversed(
+    char* Destination,
+    const size_t DestSize,
+    const mpz_class& Value,
+    const std::string& Charset
+)
+{
+    size_t length = GenerateWord(Destination, DestSize, Value, Charset);
+    std::reverse(Destination, Destination + length);
     return length;
 }
 
 const std::string
 WordGenerator::Generate(
-    const mpz_class& Value,
-    const bool Reverse
+    const size_t Value
 )
 {
-    return m_Prefix + GenerateWord(Value, m_Charset, Reverse) + m_Postfix;
+    return m_Prefix + GenerateWord(Value, m_Charset) + m_Postfix;
 }
 
-//
+const std::string
+WordGenerator::GenerateReversed(
+    const size_t Value
+)
+{
+    return m_Prefix + GenerateWordReversed(Value, m_Charset) + m_Postfix;
+}
+
+const size_t
+WordGenerator::Generate(
+    char* Destination,
+    const size_t DestSize,
+    const mpz_class& Value
+)
+{
+    return GenerateWord(Destination, DestSize, Value, m_Charset);
+}
+
+const size_t
+WordGenerator::GenerateReversed(
+    char* Destination,
+    const size_t DestSize,
+    const mpz_class& Value
+)
+{
+    return GenerateWordReversed(Destination, DestSize, Value, m_Charset);
+}
+
+const std::string
+WordGenerator::Generate(
+    const mpz_class& Value
+)
+{
+    return m_Prefix + GenerateWord(Value, m_Charset) + m_Postfix;
+}
+
+const std::string
+WordGenerator::GenerateReversed(
+    const mpz_class& Value
+)
+{
+    return m_Prefix + GenerateWordReversed(Value, m_Charset) + m_Postfix;
+}
+
 // static
-//
 const mpz_class
 WordGenerator::Parse(
     const std::string& Word,
@@ -140,9 +194,7 @@ WordGenerator::Parse(
     return ++num;
 }
 
-//
 // static
-//
 const mpz_class
 WordGenerator::Parse(
     const std::string& Word,
@@ -157,9 +209,7 @@ WordGenerator::Parse(
     return ++num;
 }
 
-//
 // static
-//
 const std::vector<uint8_t>
 WordGenerator::GenerateParsingLookupTable(
     const std::string& Charset
@@ -179,7 +229,6 @@ WordGenerator::GenerateParsingLookupTable(
     return table;
 }
 
-//
 // Static
 const mpz_class
 WordGenerator::WordLengthIndex(
