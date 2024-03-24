@@ -80,8 +80,6 @@ RainbowTable::GenerateBlock(
 {
     size_t blockStartId = m_StartingChains + (m_Blocksize * BlockId);
 
-    std::cout << "start: " << blockStartId << std::endl;
-
     // Check if we should end
     if (blockStartId >= m_Count)
     {
@@ -104,9 +102,9 @@ RainbowTable::GenerateBlock(
     SimdHashBuffer hashes(m_HashWidth);
 
     // Calculate lower bound
-    mpz_class counter = WordGenerator::WordLengthIndex(m_Min, m_Charset);
+    mpz_class lowerbound = WordGenerator::WordLengthIndex(m_Min, m_Charset);
     // Add the index for this chain
-    counter += blockStartId;
+    mpz_class counter = lowerbound + blockStartId;
 
     size_t iterations = m_Blocksize / SimdLanes();
     for (size_t iteration = 0; iteration < iterations; iteration++)
@@ -120,7 +118,7 @@ RainbowTable::GenerateBlock(
             auto length = WordGenerator::GenerateWord((char*)words[i], m_Max, counter, m_Charset);
             words.SetLength(i, length);
             chains[i].SetStart(words[i], length);
-            chains[i].SetIndex(counter);
+            chains[i].SetIndex(counter - lowerbound);
             counter++;
         }
 
@@ -234,23 +232,25 @@ RainbowTable::SaveBlock(
     }
 }
 
-void
+bool
 RainbowTable::SetType(
     const std::string Type
 )
 {
     if (Type == "compressed")
     {
-        m_TableType = TypeCompressed;
+        SetType(TypeCompressed);
     }
     else if (Type == "uncompressed")
     {
-        m_TableType = TypeUncompressed;
+        SetType(TypeUncompressed);
     }
     else
     {
-        m_TableType = TypeInvalid;
+        SetType(TypeInvalid);
+        return false;
     }
+    return true;
 }
 
 void
@@ -259,6 +259,7 @@ RainbowTable::StoreTableHeader(
 ) const
 {
     TableHeader hdr;
+    memset(&hdr, 0, sizeof(hdr));
     hdr.magic = kMagic;
     hdr.type = m_TableType;
     hdr.algorithm = m_Algorithm;
@@ -273,26 +274,40 @@ RainbowTable::StoreTableHeader(
     fs.close();
 }
 
-bool
-RainbowTable::IsTableFile(
-    void
-) const
+/* static */ bool
+RainbowTable::GetTableHeader(
+    const std::filesystem::path& Path,
+    TableHeader* Header
+)
 {
-    TableHeader hdr;
-    std::ifstream fs(m_Path, std::ios::binary);
+    if (std::filesystem::file_size(Path) < sizeof(TableHeader))
+    {
+        return false;
+    }
+    
+    std::ifstream fs(Path, std::ios::binary);
     if (!fs.is_open())
     {
         return false;
     }
 
-    fs.read((char*)&hdr, sizeof(hdr));
+    fs.read((char*)Header, sizeof(TableHeader));
     fs.close();
 
-    if (hdr.magic != kMagic)
+    if (Header->magic != kMagic)
     {
         return false;
     }
     return true;
+}
+
+/* static */ bool
+RainbowTable::IsTableFile(
+    const std::filesystem::path& Path
+)
+{
+    TableHeader hdr;
+    return GetTableHeader(Path, &hdr);
 }
 
 bool
@@ -655,6 +670,14 @@ RainbowTable::~RainbowTable(
     void
 )
 {
+    Reset();
+}
+
+void
+RainbowTable::Reset(
+    void
+)
+{
     if (m_MappedTable != nullptr)
     {
         munmap(m_MappedTable, m_MappedTableSize);
@@ -664,6 +687,33 @@ RainbowTable::~RainbowTable(
     {
         fclose(m_MappedTableFd);
     }
+
+    m_Path.clear();
+    m_PathLoaded = false;
+    m_Algorithm = HashUnknown;
+    m_Min = 0;
+    m_Max = 0;
+    m_Length = 0;
+    m_Blocksize = 1024;
+    m_Count = 0;
+    m_Threads = 0;
+    m_Charset.clear();
+    m_HashWidth = 0;
+    m_ChainWidth = 0;
+    m_Chains = 0;
+    m_TableType = TypeCompressed;
+    // For building
+    m_StartingChains = 0;
+    m_WriteHandle = nullptr;
+    m_NextWriteBlock = 0;
+    m_WriteCache.clear();
+    if (m_DispatchPool != nullptr)
+    {
+        m_DispatchPool->Stop();
+        m_DispatchPool->Wait();
+        m_DispatchPool = nullptr;
+    }
+    m_ThreadsCompleted = 0;
 }
 
 int SortCompare(
@@ -726,4 +776,43 @@ RainbowTable::Decompress(
     RainbowTable newtable;
     newtable.SetPath(Destination);
     newtable.SortTable();
+}
+
+/* static */ const Chain
+RainbowTable::GetChain(
+    const std::filesystem::path& Path,
+    const size_t Index
+)
+{
+    TableHeader hdr;
+    GetTableHeader(Path, &hdr);
+
+    std::string charset(&hdr.charset[0], &hdr.charset[hdr.charsetlen]);
+
+    Chain chain;
+    chain.SetIndex(Index);
+    chain.SetLength(hdr.length);
+
+    FILE* fh = fopen(Path.c_str(), "r");
+    fseek(fh, sizeof(TableHeader), SEEK_SET);
+    fseek(fh, ChainWidthForType((TableType)hdr.type, hdr.max) * Index, SEEK_CUR);
+
+    uint64_t start = Index;
+    if (hdr.type == (uint8_t)TypeUncompressed)
+    {
+        fread(&start, sizeof(uint64_t), 1, fh);
+        
+    }
+    mpz_class lowerbound = WordGenerator::WordLengthIndex(hdr.min, charset);
+    auto word = WordGenerator::GenerateWord(lowerbound + start, charset);
+    chain.SetStart(word);
+
+    std::string endpoint;
+    endpoint.resize(hdr.max);
+    fread(&endpoint[0], sizeof(char), 1, fh);
+    // Trim nulls
+    endpoint.resize(strlen(endpoint.c_str()));
+    chain.SetEnd(endpoint);
+
+    return chain;
 }

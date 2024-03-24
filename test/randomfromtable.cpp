@@ -26,7 +26,7 @@ int main(
         return 1;
     }
 
-    if (!rainbow.IsTableFile())
+    if (!rainbow.IsTableFile(argv[1]))
     {
         std::cerr << "Invalid rainbow table file" << std::endl;
         return 1;

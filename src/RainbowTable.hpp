@@ -46,6 +46,7 @@ class RainbowTable
 {
 public:
     ~RainbowTable(void);
+    void Reset(void);
     void InitAndRunBuild(void);
     bool ValidateConfig(void);
     void SetPath(std::filesystem::path Path) { m_Path = Path; };
@@ -65,19 +66,22 @@ public:
     void SetThreads(const size_t Threads) { m_Threads = Threads; };
     void SetCharset(const std::string Charset) { m_Charset = Charset; };
     std::string GetCharset(void) const { return m_Charset; };
-    void SetType(const std::string Type);
+    void SetType(const TableType Type) { m_TableType = Type; };
+    bool SetType(const std::string Type);
     std::string GetType(void) const { return m_TableType == TypeCompressed ? "Compressed" : "Uncompressed";  };
     bool TableExists(void) const { return std::filesystem::exists(m_Path); };
-    bool IsTableFile(void) const;
-    bool ValidTable(void) const { return TableExists() && IsTableFile(); };
+    static bool GetTableHeader(const std::filesystem::path& Path, TableHeader* Header);
+    static bool IsTableFile(const std::filesystem::path& Path);
+    bool ValidTable(void) const { return TableExists() && IsTableFile(m_Path); };
     bool LoadTable(void);
     bool Complete(void) const { return m_ThreadsCompleted == m_Threads; };
     void Crack(std::string& Hash);
-    const size_t ChainWidthForType(const TableType Type) const { return Type == TypeCompressed ? m_Max : sizeof(uint64_t) + m_Max; };
-    const size_t GetChainWidth(void) const { return ChainWidthForType(m_TableType); };
+    static const size_t ChainWidthForType(const TableType Type, const size_t Max) { return Type == TypeCompressed ? Max : sizeof(uint64_t) + Max; };
+    const size_t GetChainWidth(void) const { return ChainWidthForType(m_TableType, m_Max); };
     void DoHash(const uint8_t* Data, const size_t Length, uint8_t* Digest);
     void Decompress(const std::filesystem::path& Destination);
     void SortTable(void);
+    static const Chain GetChain(const std::filesystem::path& Path, const size_t Index);
 private:
     void StoreTableHeader(void) const;
     void GenerateBlock(const size_t ThreadId, const size_t BlockId);
@@ -99,7 +103,7 @@ private:
     size_t m_Count = 0;
     size_t m_Threads = 0;
     std::string m_Charset;
-    size_t m_HashWidth;
+    size_t m_HashWidth = 0;
     size_t m_ChainWidth = 0;
     size_t m_Chains = 0;
     TableType m_TableType = TypeCompressed;
