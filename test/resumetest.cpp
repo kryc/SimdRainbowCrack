@@ -2,8 +2,6 @@
 #include <iostream>
 #include <openssl/sha.h>
 
-#include <signal.h>
-
 #include "simdhash.h"
 
 #include "RainbowTable.hpp"
