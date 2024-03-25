@@ -73,24 +73,24 @@ int main(
     std::vector<uint8_t> hash(hashsize);
     std::vector<char> reduced(rainbow.GetMax());
     
-    ModuloReducer reducer(rainbow.GetMin(), rainbow.GetMax(), hashsize, rainbow.GetCharset());
+    auto reducer = RainbowTable::GetReducer(rainbow.GetMin(), rainbow.GetMax(), hashsize, rainbow.GetCharset());
 
     size_t length = start.size();
     memcpy(&reduced[0], start.c_str(), length);
 
     for (size_t i = 0; i < rainbow.GetLength(); i++)
     {
-        SHA1((uint8_t*)&reduced[0], length, &hash[0]);
-        length = reducer.Reduce(&reduced[0], rainbow.GetMax(), &hash[0], i);
+        RainbowTable::DoHash((uint8_t*)&reduced[0], length, &hash[0], rainbow.GetAlgorithm());
+        length = reducer->Reduce(&reduced[0], rainbow.GetMax(), &hash[0], i);
         if (i == offset)
         {
             std::cout << "Output: '" << std::string(&reduced[0], &reduced[length]) << "'" << std::endl;
-            SHA1((const uint8_t*)&reduced[0], length, &hash[0]);
+            RainbowTable::DoHash((const uint8_t*)&reduced[0], length, &hash[0], rainbow.GetAlgorithm());
                 
             std::cout << "Hash: ";
-            for (size_t i = 0; i < hashsize; i++)
+            for (size_t h = 0; h < hashsize; h++)
             {
-                printf("%0X", hash[i]);
+                printf("%02X", hash[h]);
             }
             std::cout << std::endl;
         }
@@ -99,7 +99,6 @@ int main(
     if (memcmp(&reduced[0], &end[0], rainbow.GetMax()) != 0)
     {
         std::cerr << "Non-matching endpoints!" << std::endl;
-        // std::cerr << reduced << " != " << start << std::endl
     }
 
 }

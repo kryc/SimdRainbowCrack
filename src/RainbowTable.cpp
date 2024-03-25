@@ -80,8 +80,6 @@ RainbowTable::GenerateBlock(
 {
     size_t blockStartId = m_StartingChains + (m_Blocksize * BlockId);
 
-    std::cout << "start: " << blockStartId << std::endl;
-
     // Check if we should end
     if (blockStartId >= m_Count)
     {
@@ -493,14 +491,15 @@ RainbowTable::MapTable(
     return true;
 }
 
-void
+/* static */ void
 RainbowTable::DoHash(
     const uint8_t* Data,
     const size_t Length,
-    uint8_t* Digest
+    uint8_t* Digest,
+    const HashAlgorithm Algorithm
 )
 {
-    switch (m_Algorithm)
+    switch (Algorithm)
     {
     case HashMd5:
         MD5(Data, Length, Digest);
@@ -514,6 +513,16 @@ RainbowTable::DoHash(
     default:
         break;
     }
+}
+
+void
+RainbowTable::DoHash(
+    const uint8_t* Data,
+    const size_t Length,
+    uint8_t* Digest
+)
+{
+    DoHash(Data, Length, Digest, m_Algorithm);
 }
 
 const size_t
@@ -572,20 +581,31 @@ RainbowTable::FindEndpoint(
     return (size_t)-1;
 }
 
-std::unique_ptr<Reducer>
-RainbowTable::GetReducer(void)
-const
+/* static */ std::unique_ptr<Reducer>
+RainbowTable::GetReducer(
+    const size_t Min,
+    const size_t Max,
+    const size_t HashWidth,
+    const std::string& Charset
+)
 {
     // For tables where the min and max are the same
     // (we are reducing to a constant length), we can
     // use the significantly faster BytewiseReducer
-    if (m_Min == m_Max)
+    if (Min == Max)
     {
-        return std::make_unique<BytewiseReducer>(m_Min, m_Max, m_HashWidth, m_Charset);
+        return std::make_unique<BytewiseReducer>(Min, Max, HashWidth, Charset);
     }
     // Otherwise we need to fall back to the much slower
     // modulo reducer which requires big integer division
-    return std::make_unique<ModuloReducer>(m_Min, m_Max, m_HashWidth, m_Charset);
+    return std::make_unique<ModuloReducer>(Min, Max, HashWidth, Charset);
+}
+
+std::unique_ptr<Reducer>
+RainbowTable::GetReducer(void)
+const
+{
+    return GetReducer(m_Min, m_Max, m_HashWidth, m_Charset);
 }
 
 void
@@ -593,6 +613,13 @@ RainbowTable::Crack(
     std::string& Hash
 )
 {
+    if (Hash.size() != m_HashWidth * 2)
+    {
+        std::cerr << "Invalid length of provided hash: " << Hash.size() << " != " << m_HashWidth * 2 << std::endl;
+        std::cerr << "Hash: " << Hash << std::endl;
+        return;
+    }
+
     auto target = Util::ParseHex(Hash);
 
     std::vector<uint8_t> hash(m_HashWidth);
@@ -603,6 +630,7 @@ RainbowTable::Crack(
     // Mmap the table
     if (!MapTable(true))
     {
+        std::cerr << "Error mapping the table" << std::endl;
         return;
     }
 
@@ -811,10 +839,54 @@ RainbowTable::GetChain(
 
     std::string endpoint;
     endpoint.resize(hdr.max);
-    fread(&endpoint[0], sizeof(char), 1, fh);
+    fread(&endpoint[0], sizeof(char), hdr.max, fh);
     // Trim nulls
     endpoint.resize(strlen(endpoint.c_str()));
     chain.SetEnd(endpoint);
 
+    return chain;
+}
+
+/* static */ const Chain
+RainbowTable::ComputeChain(
+    const size_t Index,
+    const size_t Min,
+    const size_t Max,
+    const size_t Length,
+    const HashAlgorithm Algorithm,
+    const std::string& Charset
+)
+{
+    mpz_class counter;
+    Chain chain;
+    size_t hashLength;
+    std::string start;
+    
+    hashLength = GetHashWidth(Algorithm);
+
+    chain.SetIndex(Index);
+    chain.SetLength(Length);
+
+    counter = WordGenerator::WordLengthIndex(Min, Charset);
+    counter += Index;
+
+    start = WordGenerator::GenerateWord(counter, Charset);
+    chain.SetStart(start);
+
+    auto reducer = GetReducer(Min, Max, hashLength, Charset);
+
+    std::vector<uint8_t> hash(hashLength);
+    std::vector<char> reduced(Max);
+    size_t reducedLength = start.size();
+
+    memcpy(&reduced[0], start.c_str(), reducedLength);
+    
+    for (size_t i = 0; i < Length; i++)
+    {
+        DoHash((uint8_t*)&reduced[0], reducedLength, &hash[0], Algorithm);
+        reducedLength = reducer->Reduce(&reduced[0], Max, &hash[0], i);
+    }
+
+    chain.SetEnd(std::string(&reduced[0], &reduced[reducedLength]));
     return chain;
 }

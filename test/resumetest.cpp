@@ -7,18 +7,6 @@
 #include "RainbowTable.hpp"
 #include "WordGenerator.hpp"
 
-void Died(dispatch::DispatcherBase* Dispatcher)
-{
-    // raise(SIGTRAP);
-    std::cout << "Dispatcher died" << std::endl;
-}
-
-void Completed(dispatch::DispatcherBase* Dispatcher)
-{
-    // raise(SIGTRAP);
-    std::cout << "Dispatcher completed" << std::endl;
-}
-
 int main(
     int argc,
     char* argv[]
@@ -39,9 +27,6 @@ int main(
     rainbow.SetType("uncompressed");
 
     auto mainDispatcher = dispatch::CreateDispatcher("main");
-
-    // mainDispatcher->SetCompletionHandler(&Completed);
-    mainDispatcher->SetDestructionHandler(&Died);
 
     dispatch::PostTaskToDispatcher(
         mainDispatcher,
@@ -93,6 +78,19 @@ int main(
         if (chain.Start() != targetstart)
         {
             std::cerr << "Non-matching start word: " << targetstart << " != " << chain.Start() << std::endl;
+            error = true;
+        }
+
+        // Check the chain
+        auto computed = RainbowTable::ComputeChain(i, 12, 12, 50, HashSha1, ASCII);
+        if (chain.Start() != computed.Start())
+        {
+            std::cerr << "Computed start does not match: " << chain.Start() << " != " << computed.Start() << std::endl;
+            error = true;
+        }
+        if (chain.End() != computed.End())
+        {
+            std::cerr << "Computed end does not match: " << chain.End() << " != " << computed.End() << std::endl;
             error = true;
         }
     }
