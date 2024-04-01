@@ -189,20 +189,21 @@ RainbowTable::WriteBlock(
     size_t buffersize = m_ChainWidth * m_Blocksize;
     buffer.resize(buffersize);
     uint8_t* bufferptr = &buffer[0];
-    uint64_t index;
+    // Loop through the chains and add them to the buffer
     for (auto& chain : Block)
     {
         if (m_TableType == TypeUncompressed)
         {
-            index = chain.Index().get_ui();
-            *((uint64_t*)bufferptr) = index;
+            *((uint64_t*)bufferptr) = chain.Index().get_ui();;
             bufferptr += sizeof(uint64_t);
         }
         memcpy(bufferptr, chain.End().c_str(), chain.End().size());
         bufferptr += m_Max;
     }
+    // Perform the write in a single shot and flush
     fwrite(&buffer[0], buffersize, sizeof(uint8_t), m_WriteHandle);
     fflush(m_WriteHandle);
+    m_ChainsWritten += Block.size();
 }
 
 void
@@ -325,19 +326,9 @@ RainbowTable::LoadTable(
         return false;
     }
 
-    std::ifstream fs(m_Path, std::ios::binary);
-    if (!fs.is_open())
+    if (!GetTableHeader(m_Path, &hdr))
     {
-        std::cerr << "Unable to open RainbowTable" << std::endl;
-        return false;
-    }
-
-    fs.read((char*)&hdr, sizeof(hdr));
-    fs.close();
-
-    if (hdr.magic != kMagic)
-    {
-        std::cerr << "Invalid RainbowTable file" << std::endl;
+        std::cerr << "Error reading table header" << std::endl;
         return false;
     }
 
@@ -444,6 +435,7 @@ RainbowTable::ThreadCompleted(
     if (m_ThreadsCompleted == m_Threads)
     {
         std::cout << "Table Creation completed" << std::endl;
+        std::cout << "Chains written: " << m_ChainsWritten << std::endl;
         // Stop the pool
         m_DispatchPool->Stop();
         m_DispatchPool->Wait();
@@ -458,14 +450,22 @@ RainbowTable::MapTable(
     const bool ReadOnly
 )
 {
-    m_MappedTableSize = std::filesystem::file_size(m_Path) - sizeof(TableHeader);
-    m_MappedTableFd = fopen(m_Path.c_str(), "r");
+    m_MappedFileSize = std::filesystem::file_size(m_Path);
+    m_MappedTableSize = m_MappedFileSize - sizeof(TableHeader);
+    if (ReadOnly)
+    {
+        m_MappedTableFd = fopen(m_Path.c_str(), "r");
+    }
+    else
+    {
+        m_MappedTableFd = fopen(m_Path.c_str(), "r+");
+    }
     if (m_MappedTableFd == nullptr)
     {
         std::cerr << "Unable to open a handle to the table file" << std::endl;
         return false;
     }
-    // std::cerr << m_MappedTableSize << std::endl;
+
     int flags = 0;
     int prot = PROT_READ;
     if (ReadOnly)
@@ -474,16 +474,17 @@ RainbowTable::MapTable(
     }
     else
     {
+        flags = MAP_SHARED;
         prot |= PROT_WRITE;
     }
     
-    m_MappedTable = (uint8_t*)mmap(nullptr, m_MappedTableSize, prot, flags, fileno(m_MappedTableFd), 0);
+    m_MappedTable = (uint8_t*)mmap(nullptr, m_MappedFileSize, prot, flags, fileno(m_MappedTableFd), 0);
     if (m_MappedTable == MAP_FAILED)
     {
         std::cerr << "Unable to map table into memory: " << strerror(errno) << std::endl;
         return false;
     }
-    auto ret = madvise(m_MappedTable, m_MappedTableSize, MADV_RANDOM | MADV_WILLNEED);
+    auto ret = madvise(m_MappedTable, m_MappedFileSize, MADV_RANDOM | MADV_WILLNEED);
     if (ret != 0)
     {
         std::cerr << "Madvise not happy" << std::endl;
@@ -535,9 +536,11 @@ RainbowTable::FindEndpoint(
     comparitor.resize(m_Max);
     memcpy(&comparitor[0], Endpoint, Length);
     size_t skiplen = GetChainWidth();
+    // Uncompressed tables are just flat files
+    // of endpoints, each of m_Max width. They are
+    // unsorted so we need to do a Linear search
     if (m_TableType == TypeCompressed)
     {
-        // Linear search
         uint8_t* endpoint = m_MappedTable + sizeof(TableHeader);
         for (
             size_t c = 0;
@@ -550,9 +553,12 @@ RainbowTable::FindEndpoint(
             }
         }
     }
+    // Uncompressed files are flat binary files of an
+    // unsigned integer index, followed by the text
+    // endpoint of m_Max width. They are sortd by endpoint
+    // so we can do a binary search
     else
     {
-        // Binary search
         size_t low = 0;
         size_t high = m_Chains - 1;
         uint8_t* startendpoint = m_MappedTable + sizeof(TableHeader) + sizeof(uint64_t);
@@ -746,7 +752,8 @@ RainbowTable::Reset(
     m_ThreadsCompleted = 0;
 }
 
-int SortCompare(
+int
+SortCompare(
     const void* Comp1,
     const void* Comp2,
     void* Arguments
@@ -760,14 +767,14 @@ RainbowTable::SortTable(
     void
 )
 {
-    if (!MapTable(true))
+    if (!MapTable(false))
     {
         std::cerr << "Error mapping table for sort"  << std::endl;
         return;
     }
 
     uint8_t* start = m_MappedTable + sizeof(TableHeader);
-    qsort_r(start, m_Count, GetChainWidth(), SortCompare, (void*)m_Max);
+    qsort_r(start, GetCount(), GetChainWidth(), SortCompare, (void*)m_Max);
 }
 
 void
@@ -784,9 +791,11 @@ RainbowTable::Decompress(
         return;
     }
 
+    // Copy the existing header but change the type
     hdr = *((TableHeader*)m_MappedTable);
     hdr.type = TypeUncompressed;
 
+    // Open the destination for writing
     fhw = fopen(Destination.c_str(), "w");
     if (fhw == nullptr)
     {
@@ -794,17 +803,41 @@ RainbowTable::Decompress(
         return;
     }
 
+    // Write the header
     fwrite(&hdr, sizeof(hdr), 1, fhw);
+
+    std::cout << "Table type: " << GetType() << std::endl;
+    std::cout << "Chain width: " << GetChainWidth() << std::endl;
+    std::cout << "Exporting " << m_Chains << " chains" << std::endl;
+
+    // Pointer to track the next read target
     uint8_t* next = m_MappedTable + sizeof(TableHeader);
-    for (size_t index = 0; index < m_Chains; index++, next += m_Max)
+
+    // Loop through and write each index followed by the next endpoint
+    for (uint64_t index = 0; index < m_Chains; index++, next += m_Max)
     {
-        fwrite(&index, sizeof(index), 1, fhw);
-        fwrite(next, m_Max, sizeof(uint8_t), fhw);
+        fwrite(&index, sizeof(uint64_t), 1, fhw);
+        fwrite(next, sizeof(uint8_t), m_Max, fhw);
     }
     fclose(fhw);
 
     RainbowTable newtable;
     newtable.SetPath(Destination);
+
+    if (!newtable.ValidTable())
+    {
+        std::cerr << "Decompressed table does not seem valid" << std::endl;
+        return;
+    }
+    
+    if (!newtable.LoadTable())
+    {
+        std::cerr << "Error loading new table" << std::endl;
+        return;
+    }
+
+    std::cout << "Sorting " << newtable.GetCount() << " chains" << std::endl;
+
     newtable.SortTable();
 }
 

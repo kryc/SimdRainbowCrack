@@ -118,9 +118,11 @@ private:
     std::map<size_t, ChainBlock> m_WriteCache;
     dispatch::DispatchPoolPtr m_DispatchPool;
     size_t m_ThreadsCompleted = 0;
+    size_t m_ChainsWritten = 0;
     // For cracking
     uint8_t* m_MappedTable = nullptr;
     FILE* m_MappedTableFd = nullptr;
+    size_t m_MappedFileSize;
     size_t m_MappedTableSize;
     size_t m_FalsePositives = 0;
 };
