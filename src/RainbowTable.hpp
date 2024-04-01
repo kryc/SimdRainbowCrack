@@ -82,7 +82,7 @@ public:
     static const size_t ChainWidthForType(const TableType Type, const size_t Max) { return Type == TypeCompressed ? Max : sizeof(uint64_t) + Max; };
     const size_t GetChainWidth(void) const { return ChainWidthForType(m_TableType, m_Max); };
     static void DoHash(const uint8_t* Data, const size_t Length, uint8_t* Digest, const HashAlgorithm);
-    void DoHash(const uint8_t* Data, const size_t Length, uint8_t* Digest);
+    void DoHash(const uint8_t* Data, const size_t Length, uint8_t* Digest) const;
     void Decompress(const std::filesystem::path& Destination);
     void SortTable(void);
     static const Chain GetChain(const std::filesystem::path& Path, const size_t Index);
@@ -94,12 +94,13 @@ private:
     void SaveBlock(const size_t BlockId, const std::vector<Chain> Block);
     void WriteBlock(const size_t BlockId, const ChainBlock& Block);
     void ThreadCompleted(const size_t ThreadId);
-    std::optional<std::string> CrackOne(std::string& Target);
-    const size_t FindEndpoint(const char* Endpoint, const size_t Length);
-    std::optional<std::string> ValidateChain(const size_t ChainIndex, const uint8_t* Hash);
+    std::optional<std::string> CrackOne(std::string& Target) const;
+    const size_t FindEndpoint(const char* Endpoint, const size_t Length) const;
+    std::optional<std::string> ValidateChain(const size_t ChainIndex, const uint8_t* Hash) const;
     bool MapTable(const bool ReadOnly = true);
     std::unique_ptr<Reducer> GetReducer(void) const;
     void CrackWorker(const size_t ThreadId);
+    /*std::vector<std::tuple<std::string, std::string>>*/ void CrackSimd(std::vector<std::string> Hashes);
     void ResultFound(const std::string Hash, const std::string Result);
     // General purpose
     std::filesystem::path m_Path;

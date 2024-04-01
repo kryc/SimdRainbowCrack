@@ -523,7 +523,7 @@ RainbowTable::DoHash(
     const uint8_t* Data,
     const size_t Length,
     uint8_t* Digest
-)
+) const
 {
     DoHash(Data, Length, Digest, m_Algorithm);
 }
@@ -532,7 +532,7 @@ const size_t
 RainbowTable::FindEndpoint(
     const char* Endpoint,
     const size_t Length
-)
+) const
 {
     std::vector<char> comparitor;
     comparitor.resize(m_Max);
@@ -619,7 +619,7 @@ const
 std::optional<std::string>
 RainbowTable::CrackOne(
     std::string& Hash
-)
+) const
 {
     if (Hash.size() != m_HashWidth * 2)
     {
@@ -660,7 +660,7 @@ RainbowTable::CrackOne(
             }
             else
             {
-                m_FalsePositives++;
+                // m_FalsePositives++;
             }
         }
     }
@@ -676,37 +676,132 @@ RainbowTable::ResultFound(
     std::cout << Hash << " " << Result << std::endl;
 }
 
+//std::vector<std::tuple<std::string, std::string>>
+void
+RainbowTable::CrackSimd(
+    std::vector<std::string> Hashes
+)
+{
+    size_t lanes = Hashes.size();
+    std::vector<std::vector<uint8_t>> hashbytes;
+    auto reducer = GetReducer();
+    SimdHashBuffer words(m_Max);
+    SimdHashBuffer hashes(m_HashWidth);
+
+    // Parse the hex strings into byte arrays
+    for (size_t i = 0; i < lanes; i++)
+    {
+        hashbytes.push_back(
+            Util::ParseHex(Hashes[i])
+        );
+    }
+
+    for (ssize_t i = m_Length - 1; i >= 0; i--)
+    {
+        // Copy the hashes into the Simd buffers
+        for (size_t j = 0; j < lanes; j++)
+        {
+            memcpy(hashes[j], hashbytes[j].data(), hashbytes[j].size());
+        }
+
+        // Perform the full chain from the next hop
+        for (size_t j = i; j < m_Length - 1; j++)
+        {
+            // Perform the reductions
+            for (size_t h = 0; h < lanes; h++)
+            {
+                const uint8_t* hash = hashes[h];
+                auto length = reducer->Reduce((char*)words[h], m_Max, hash, j);
+                words.SetLength(h, length);
+            }
+            
+            // Perform hash
+            SimdHashContext ctx;
+            SimdHashInit(&ctx, m_Algorithm);
+            SimdHashUpdate(&ctx, words.Lengths(), words.ConstBuffers());
+            SimdHashFinalize(&ctx);
+            SimdHashGetHashes(&ctx, hashes.Buffer());
+        }
+
+        // Perform the final reductions and check
+        for (size_t h = 0; h < lanes; h++)
+        {
+            const uint8_t* hash = hashes[h];
+            auto length = reducer->Reduce((char*)words[h], m_Max, hash, m_Length - 1);
+            
+            // Check end, if it matches, we can perform one full chain to see if we find it
+            size_t index = FindEndpoint((char*)words[h], length);
+            if (index != (size_t)-1)
+            {
+                auto match = ValidateChain(index, hashbytes[h].data());
+                if (match.has_value())
+                {
+                    dispatch::PostTaskToDispatcher(
+                        "main",
+                        dispatch::bind(
+                            &RainbowTable::ResultFound,
+                            this,
+                            Hashes[h],
+                            match.value()
+                        )
+                    );
+                }
+                else
+                {
+                    m_FalsePositives++;
+                }
+            }
+        }
+    }
+}
+
 void
 RainbowTable::CrackWorker(
     const size_t ThreadId
 )
 {
-    for (;;)
+    bool exhausted = false;
+    while (!exhausted)
     {
         // Read the next line from the input file
-        std::string next;
+        std::vector<std::string> next;
         {
             std::lock_guard<std::mutex> lock(m_HashFileStreamLock);
-            if(!std::getline(m_HashFileStream, next))
+            for (size_t i = 0; i < SimdLanes(); i++)
             {
-                break;
+                std::string line;
+                if(!std::getline(m_HashFileStream, line))
+                {
+                    exhausted = true;
+                    break;
+                }
+                next.push_back(std::move(line));
             }
         }
 
-        // Crack the next result
-        auto result = CrackOne(next);
-        if (result)
+        if (exhausted)
         {
-            dispatch::PostTaskToDispatcher(
-                "main",
-                dispatch::bind(
-                    &RainbowTable::ResultFound,
-                    this,
-                    next,
-                    result.value()
-                )
-            );
+            break;
         }
+
+        CrackSimd(
+            std::move(next)
+        );
+
+        // Crack the next result
+        // auto result = CrackOne(next);
+        // if (result)
+        // {
+        //     dispatch::PostTaskToDispatcher(
+        //         "main",
+        //         dispatch::bind(
+        //             &RainbowTable::ResultFound,
+        //             this,
+        //             next,
+        //             result.value()
+        //         )
+        //     );
+        // }
     }
 
     // We dropped out, post that we are done
@@ -777,7 +872,7 @@ std::optional<std::string>
 RainbowTable::ValidateChain(
     const size_t ChainIndex,
     const uint8_t* Target
-)
+) const
 {
     size_t length;
     std::vector<uint8_t> hash(m_HashWidth);
