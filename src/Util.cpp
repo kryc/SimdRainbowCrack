@@ -15,7 +15,9 @@ namespace Util
 {
 
 std::vector<uint8_t>
-ParseHex(std::string HexString)
+ParseHex(
+	std::string& HexString
+)
 {
 	std::vector<uint8_t> vec;
 	bool doingUpper = true;
@@ -74,5 +76,30 @@ ToHex(
 	return ret;
 }
 
+bool
+IsHex(
+	const std::string& String
+)
+{
+	// Detect an odd length string
+	if (String.size() & 1)
+	{
+		return false;
+	}
+
+	for (char c : String)
+	{
+		if (!isalnum(c))
+		{
+			return false;
+		}
+		else if((c > 'H' && c < 'a') || c > 'H')
+		{
+			return false;
+		}
+	}
+	
+	return true;
+}
 
 }

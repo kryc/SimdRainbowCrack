@@ -10,7 +10,9 @@
 #define RainbowTable_hpp
 
 #include <filesystem>
+#include <fstream>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <string>
 
@@ -76,7 +78,7 @@ public:
     bool ValidTable(void) const { return TableExists() && IsTableFile(m_Path); };
     bool LoadTable(void);
     bool Complete(void) const { return m_ThreadsCompleted == m_Threads; };
-    void Crack(std::string& Hash);
+    void Crack(std::string& Target);
     static const size_t ChainWidthForType(const TableType Type, const size_t Max) { return Type == TypeCompressed ? Max : sizeof(uint64_t) + Max; };
     const size_t GetChainWidth(void) const { return ChainWidthForType(m_TableType, m_Max); };
     static void DoHash(const uint8_t* Data, const size_t Length, uint8_t* Digest, const HashAlgorithm);
@@ -92,10 +94,13 @@ private:
     void SaveBlock(const size_t BlockId, const std::vector<Chain> Block);
     void WriteBlock(const size_t BlockId, const ChainBlock& Block);
     void ThreadCompleted(const size_t ThreadId);
+    std::optional<std::string> CrackOne(std::string& Target);
     const size_t FindEndpoint(const char* Endpoint, const size_t Length);
     std::optional<std::string> ValidateChain(const size_t ChainIndex, const uint8_t* Hash);
     bool MapTable(const bool ReadOnly = true);
     std::unique_ptr<Reducer> GetReducer(void) const;
+    void CrackWorker(const size_t ThreadId);
+    void ResultFound(const std::string Hash, const std::string Result);
     // General purpose
     std::filesystem::path m_Path;
     bool m_PathLoaded = false;
@@ -125,6 +130,8 @@ private:
     size_t m_MappedFileSize;
     size_t m_MappedTableSize;
     size_t m_FalsePositives = 0;
+    std::ifstream m_HashFileStream;
+    std::mutex m_HashFileStreamLock;
 };
 
 #endif /* RainbowTable_hpp */

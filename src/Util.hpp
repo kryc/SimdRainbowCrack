@@ -18,13 +18,18 @@ namespace Util
 
 std::vector<uint8_t>
 ParseHex(
-    std::string HexString
+    std::string& HexString
 );
 
 std::string
 ToHex(
     const uint8_t* Bytes,
     const size_t Length
+);
+
+bool
+IsHex(
+    const std::string& String
 );
 
 

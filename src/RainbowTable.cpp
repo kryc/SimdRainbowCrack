@@ -7,8 +7,10 @@
 //
 
 #include <cinttypes>
+#include <cstddef>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -614,8 +616,8 @@ const
     return GetReducer(m_Min, m_Max, m_HashWidth, m_Charset);
 }
 
-void
-RainbowTable::Crack(
+std::optional<std::string>
+RainbowTable::CrackOne(
     std::string& Hash
 )
 {
@@ -623,7 +625,7 @@ RainbowTable::Crack(
     {
         std::cerr << "Invalid length of provided hash: " << Hash.size() << " != " << m_HashWidth * 2 << std::endl;
         std::cerr << "Hash: " << Hash << std::endl;
-        return;
+        return std::nullopt;
     }
 
     auto target = Util::ParseHex(Hash);
@@ -632,13 +634,6 @@ RainbowTable::Crack(
     std::vector<char> reduced(m_Max);
     auto reducer = GetReducer();
     size_t length;
-
-    // Mmap the table
-    if (!MapTable(true))
-    {
-        std::cerr << "Error mapping the table" << std::endl;
-        return;
-    }
 
     // Perform check
     for (ssize_t i = m_Length - 1; i >= 0; i--)
@@ -661,15 +656,120 @@ RainbowTable::Crack(
             auto match = ValidateChain(index, &target[0]);
             if (match.has_value())
             {
-                auto hashstr = Util::ToHex(&target[0], m_HashWidth);
-                std::cout << hashstr << ' ' << match.value() << std::endl;
-                return;
+                return match;
             }
             else
             {
                 m_FalsePositives++;
             }
         }
+    }
+    return std::nullopt;
+}
+
+void
+RainbowTable::ResultFound(
+    const std::string Hash,
+    const std::string Result
+)
+{
+    std::cout << Hash << " " << Result << std::endl;
+}
+
+void
+RainbowTable::CrackWorker(
+    const size_t ThreadId
+)
+{
+    for (;;)
+    {
+        // Read the next line from the input file
+        std::string next;
+        {
+            std::lock_guard<std::mutex> lock(m_HashFileStreamLock);
+            if(!std::getline(m_HashFileStream, next))
+            {
+                break;
+            }
+        }
+
+        // Crack the next result
+        auto result = CrackOne(next);
+        if (result)
+        {
+            dispatch::PostTaskToDispatcher(
+                "main",
+                dispatch::bind(
+                    &RainbowTable::ResultFound,
+                    this,
+                    next,
+                    result.value()
+                )
+            );
+        }
+    }
+
+    // We dropped out, post that we are done
+    dispatch::PostTaskToDispatcher(
+        "main",
+        dispatch::bind(
+            &RainbowTable::ThreadCompleted,
+            this,
+            ThreadId
+        )
+    );
+}
+
+void
+RainbowTable::Crack(
+    std::string& Target
+)
+{
+    // Mmap the table
+    if (!MapTable(true))
+    {
+        std::cerr << "Error mapping the table" << std::endl;
+        return;
+    }
+
+    // Figure out if this is a single hash
+    if (Util::IsHex(Target))
+    {
+        auto result = CrackOne(Target);
+        if (result)
+        {
+            std::cout << Target << ' ' << result.value() << std::endl;
+        }
+    }
+    // Check if it is a file
+    else if (std::filesystem::exists(Target))
+    {
+        // Open the input file handle
+        m_HashFileStream = std::ifstream(Target);
+
+        if (m_Threads == 0)
+        {
+            m_Threads = std::thread::hardware_concurrency();
+        }
+
+        // Create the dispatchers
+        m_DispatchPool = dispatch::CreateDispatchPool("pool", m_Threads);
+        
+        // Loop through and start the cracking jobs
+        for (size_t i = 0; i < m_Threads; i++)
+        {
+            m_DispatchPool->PostTask(
+                dispatch::bind(
+                    &RainbowTable::CrackWorker,
+                    this,
+                    i
+                )
+            );
+        }
+    }
+    else
+    {
+        std::cerr << "Unrecognised target hash or file" << std::endl;
     }
 }
 

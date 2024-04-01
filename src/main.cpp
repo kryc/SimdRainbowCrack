@@ -137,7 +137,14 @@ main(
             return 1;
         }
 
-        rainbow.Crack(target);
+        auto mainDispatcher = dispatch::CreateAndEnterDispatcher(
+            "main",
+            dispatch::bind(
+                &RainbowTable::Crack,
+                &rainbow,
+                target
+            )
+        );
     }
     else if (action == "decompress")
     {
