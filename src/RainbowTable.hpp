@@ -44,6 +44,8 @@ typedef struct  __attribute__((__packed__)) _TableHeader
     char     charset[128];
 } TableHeader;
 
+typedef uint32_t rowindex_t;
+
 class RainbowTable
 {
 public:
@@ -79,26 +81,33 @@ public:
     bool LoadTable(void);
     bool Complete(void) const { return m_ThreadsCompleted == m_Threads; };
     void Crack(std::string& Target);
-    static const size_t ChainWidthForType(const TableType Type, const size_t Max) { return Type == TypeCompressed ? Max : sizeof(uint64_t) + Max; };
+    static const size_t ChainWidthForType(const TableType Type, const size_t Max) { return Type == TypeCompressed ? Max : sizeof(rowindex_t) + Max; };
     const size_t GetChainWidth(void) const { return ChainWidthForType(m_TableType, m_Max); };
     static void DoHash(const uint8_t* Data, const size_t Length, uint8_t* Digest, const HashAlgorithm);
-    void DoHash(const uint8_t* Data, const size_t Length, uint8_t* Digest) const;
-    void Decompress(const std::filesystem::path& Destination);
+    void DoHash(const uint8_t* Data, const size_t Length, uint8_t* Digest) const { DoHash(Data, Length, Digest, m_Algorithm); };
+    void Decompress(const std::filesystem::path& Destination) { ChangeType(Destination, TypeUncompressed); };
+    void Compress(const std::filesystem::path& Destination) { ChangeType(Destination, TypeCompressed); };
     void SortTable(void);
     static const Chain GetChain(const std::filesystem::path& Path, const size_t Index);
     static const Chain ComputeChain(const size_t Index, const size_t Min, const size_t Max, const size_t Length, const HashAlgorithm Algorithm, const std::string& Charset);
     static std::unique_ptr<Reducer> GetReducer(const size_t Min, const size_t Max, const size_t HashWidth, const std::string& Charset);
+protected:
+    void SortStartpoints(void);
+    void RemoveStartpoints(void);
 private:
+    void ChangeType(const std::filesystem::path& Destination, const TableType Type);
     void StoreTableHeader(void) const;
     void GenerateBlock(const size_t ThreadId, const size_t BlockId);
     void SaveBlock(const size_t BlockId, const std::vector<Chain> Block);
     void WriteBlock(const size_t BlockId, const ChainBlock& Block);
     void ThreadCompleted(const size_t ThreadId);
-    std::optional<std::string> CrackOne(std::string& Target) const;
+    std::optional<std::string> CrackOne(std::string& Target);
     const size_t FindEndpoint(const char* Endpoint, const size_t Length) const;
     std::optional<std::string> ValidateChain(const size_t ChainIndex, const uint8_t* Hash) const;
+    bool TableMapped(void) { return m_MappedTableFd != nullptr; };
     bool MapTable(const bool ReadOnly = true);
-    std::unique_ptr<Reducer> GetReducer(void) const;
+    bool UnmapTable(void);
+    std::unique_ptr<Reducer> GetReducer(void) const { return GetReducer(m_Min, m_Max, m_HashWidth, m_Charset); };
     void CrackWorker(const size_t ThreadId);
     /*std::vector<std::tuple<std::string, std::string>>*/ void CrackSimd(std::vector<std::string> Hashes);
     void ResultFound(const std::string Hash, const std::string Result);
@@ -131,6 +140,7 @@ private:
     size_t m_MappedFileSize;
     size_t m_MappedTableSize;
     size_t m_FalsePositives = 0;
+    bool m_MappedReadOnly = false;
     std::ifstream m_HashFileStream;
     std::mutex m_HashFileStreamLock;
 };

@@ -17,6 +17,7 @@
 #include <sys/mman.h>
 #include <openssl/md5.h>
 #include <openssl/sha.h>
+#include <unistd.h>
 
 #include "SimdHashBuffer.hpp"
 
@@ -59,19 +60,34 @@ RainbowTable::InitAndRunBuild(
         return;
     }
 
-    m_DispatchPool = dispatch::CreateDispatchPool("pool", m_Threads);
-
-    for (size_t i = 0; i < m_Threads; i++)
+    if (m_Threads > 1)
     {
-        m_DispatchPool->PostTask(
+        m_DispatchPool = dispatch::CreateDispatchPool("pool", m_Threads);
+
+        for (size_t i = 0; i < m_Threads; i++)
+        {
+            m_DispatchPool->PostTask(
+                dispatch::bind(
+                    &RainbowTable::GenerateBlock,
+                    this,
+                    i,
+                    i
+                )
+            );
+        }
+    }
+    else
+    {
+        dispatch::PostTaskFast(
             dispatch::bind(
                 &RainbowTable::GenerateBlock,
                 this,
-                i,
-                i
+                0,
+                0
             )
         );
     }
+    
 }
 
 void
@@ -98,7 +114,8 @@ RainbowTable::GenerateBlock(
 
     auto reducer = GetReducer();
     std::vector<Chain> block;
-    block.reserve(m_Blocksize);
+    size_t chainCount = m_Blocksize % SimdLanes() == 0 ? m_Blocksize : m_Blocksize + SimdLanes() % SimdLanes();
+    block.reserve(chainCount);
 
     SimdHashBuffer words(m_Max);
     SimdHashBuffer hashes(m_HashWidth);
@@ -111,16 +128,15 @@ RainbowTable::GenerateBlock(
     size_t iterations = m_Blocksize / SimdLanes();
     for (size_t iteration = 0; iteration < iterations; iteration++)
     {
-        std::vector<Chain> chains;
-        chains.resize(SimdLanes());
-
         // Set the chain start point
         for (size_t i = 0; i < SimdLanes(); i++)
         {
             auto length = WordGenerator::GenerateWord((char*)words[i], m_Max, counter, m_Charset);
             words.SetLength(i, length);
-            chains[i].SetStart(words[i], length);
-            chains[i].SetIndex(counter - lowerbound);
+            Chain chain;
+            chain.SetStart(words[i], length);
+            chain.SetIndex(counter - lowerbound);
+            block.push_back(std::move(chain));
             counter++;
         }
 
@@ -147,8 +163,7 @@ RainbowTable::GenerateBlock(
         
         for (size_t h = 0; h < SimdLanes(); h++)
         {
-            chains[h].SetEnd(words[h], words.GetLength(h));
-            block.push_back(std::move(chains[h]));
+            block[iteration * SimdLanes() + h].SetEnd(words[h], words.GetLength(h));
         }
     }
 
@@ -196,8 +211,8 @@ RainbowTable::WriteBlock(
     {
         if (m_TableType == TypeUncompressed)
         {
-            *((uint64_t*)bufferptr) = chain.Index().get_ui();;
-            bufferptr += sizeof(uint64_t);
+            *((rowindex_t*)bufferptr) = chain.Index().get_ui();;
+            bufferptr += sizeof(rowindex_t);
         }
         memcpy(bufferptr, chain.End().c_str(), chain.End().size());
         bufferptr += m_Max;
@@ -439,8 +454,11 @@ RainbowTable::ThreadCompleted(
         std::cout << "Table Creation completed" << std::endl;
         std::cout << "Chains written: " << m_ChainsWritten << std::endl;
         // Stop the pool
-        m_DispatchPool->Stop();
-        m_DispatchPool->Wait();
+        if (m_DispatchPool != nullptr)
+        {
+            m_DispatchPool->Stop();
+            m_DispatchPool->Wait();
+        }
 
         // Stop the current (main) dispatcher
         dispatch::CurrentDispatcher()->Stop();
@@ -448,10 +466,51 @@ RainbowTable::ThreadCompleted(
 }
 
 bool
+RainbowTable::UnmapTable(
+    void
+)
+{
+    int result = 0;
+    if (m_MappedTable != nullptr)
+    {
+        result = munmap(m_MappedTable, m_MappedTableSize);
+        m_MappedTable = nullptr;
+        m_MappedTableSize = 0;
+        if (result != 0)
+        {
+            std::cerr << "Unable to unmap table" << std::endl;
+        }
+    }
+
+    if (m_MappedTableFd != nullptr)
+    {
+        fclose(m_MappedTableFd);
+        m_MappedTableFd = nullptr;
+    }
+
+    return result == 0;
+}
+
+bool
 RainbowTable::MapTable(
     const bool ReadOnly
 )
 {
+    // Check if it is already mapped
+    if (TableMapped())
+    {
+        if (m_MappedReadOnly == ReadOnly)
+        {
+            return true;
+        }
+        // Unmap it to remap writable
+        if (!UnmapTable())
+        {
+            std::cerr << "Unmapping table failed" << std::endl;
+            return false;
+        }
+    }
+
     m_MappedFileSize = std::filesystem::file_size(m_Path);
     m_MappedTableSize = m_MappedFileSize - sizeof(TableHeader);
     if (ReadOnly)
@@ -518,16 +577,6 @@ RainbowTable::DoHash(
     }
 }
 
-void
-RainbowTable::DoHash(
-    const uint8_t* Data,
-    const size_t Length,
-    uint8_t* Digest
-) const
-{
-    DoHash(Data, Length, Digest, m_Algorithm);
-}
-
 const size_t
 RainbowTable::FindEndpoint(
     const char* Endpoint,
@@ -563,7 +612,7 @@ RainbowTable::FindEndpoint(
     {
         size_t low = 0;
         size_t high = m_Chains - 1;
-        uint8_t* startendpoint = m_MappedTable + sizeof(TableHeader) + sizeof(uint64_t);
+        uint8_t* startendpoint = m_MappedTable + sizeof(TableHeader) + sizeof(rowindex_t);
         while (low <= high)
         {
             size_t mid = (low + high) / 2;
@@ -573,7 +622,7 @@ RainbowTable::FindEndpoint(
             int cmp = memcmp(endpoint, &comparitor[0], m_Max);
             if (cmp == 0)
             {
-                uint64_t* index = (uint64_t*)endpoint - 1;
+                rowindex_t* index = (rowindex_t*)endpoint - 1;
                 return (size_t)*index;
             }
             else if (cmp < 0)
@@ -609,17 +658,10 @@ RainbowTable::GetReducer(
     return std::make_unique<ModuloReducer>(Min, Max, HashWidth, Charset);
 }
 
-std::unique_ptr<Reducer>
-RainbowTable::GetReducer(void)
-const
-{
-    return GetReducer(m_Min, m_Max, m_HashWidth, m_Charset);
-}
-
 std::optional<std::string>
 RainbowTable::CrackOne(
     std::string& Hash
-) const
+)
 {
     if (Hash.size() != m_HashWidth * 2)
     {
@@ -660,7 +702,7 @@ RainbowTable::CrackOne(
             }
             else
             {
-                // m_FalsePositives++;
+                m_FalsePositives++;
             }
         }
     }
@@ -787,21 +829,6 @@ RainbowTable::CrackWorker(
         CrackSimd(
             std::move(next)
         );
-
-        // Crack the next result
-        // auto result = CrackOne(next);
-        // if (result)
-        // {
-        //     dispatch::PostTaskToDispatcher(
-        //         "main",
-        //         dispatch::bind(
-        //             &RainbowTable::ResultFound,
-        //             this,
-        //             next,
-        //             result.value()
-        //         )
-        //     );
-        // }
     }
 
     // We dropped out, post that we are done
@@ -835,6 +862,9 @@ RainbowTable::Crack(
         {
             std::cout << Target << ' ' << result.value() << std::endl;
         }
+
+        // Stop the main dispatcher
+        dispatch::CurrentDispatcher()->Stop();
     }
     // Check if it is a file
     else if (std::filesystem::exists(Target))
@@ -909,15 +939,7 @@ RainbowTable::Reset(
     void
 )
 {
-    if (m_MappedTable != nullptr)
-    {
-        munmap(m_MappedTable, m_MappedTableSize);
-    }
-
-    if (m_MappedTableFd != nullptr)
-    {
-        fclose(m_MappedTableFd);
-    }
+    UnmapTable();
 
     m_Path.clear();
     m_PathLoaded = false;
@@ -948,13 +970,43 @@ RainbowTable::Reset(
 }
 
 int
-SortCompare(
+SortCompareEndpoints(
     const void* Comp1,
     const void* Comp2,
     void* Arguments
 )
 {
-    return memcmp((uint8_t*)Comp1 + sizeof(uint64_t), (uint8_t*)Comp2 + sizeof(uint64_t), (size_t)Arguments);
+    return memcmp((uint8_t*)Comp1 + sizeof(rowindex_t), (uint8_t*)Comp2 + sizeof(rowindex_t), (size_t)Arguments);
+}
+
+int
+SortCompareStartpoints(
+    const void* Comp1,
+    const void* Comp2
+)
+{
+    return *((rowindex_t*)Comp1) - *((rowindex_t*)Comp2);
+}
+
+void
+RainbowTable::SortStartpoints(
+    void
+)
+{
+    if (!MapTable(false))
+    {
+        std::cerr << "Error mapping table for sort"  << std::endl;
+        return;
+    }
+
+    uint8_t* start = m_MappedTable + sizeof(TableHeader);
+    if (m_TableType == TypeCompressed)
+    {
+        std::cerr << "Unable to sort compressed tables by start point" << std::endl;
+        return;
+    }
+
+    qsort(start, GetCount(), GetChainWidth(), SortCompareStartpoints);
 }
 
 void
@@ -969,53 +1021,127 @@ RainbowTable::SortTable(
     }
 
     uint8_t* start = m_MappedTable + sizeof(TableHeader);
-    qsort_r(start, GetCount(), GetChainWidth(), SortCompare, (void*)m_Max);
+    if (m_TableType == TypeUncompressed)
+    {
+        qsort_r(start, GetCount(), GetChainWidth(), SortCompareEndpoints, (void*)m_Max);
+    }
+    else
+    {
+        qsort(start, GetCount(), GetChainWidth(), SortCompareStartpoints);
+    }
 }
 
 void
-RainbowTable::Decompress(
-    const std::filesystem::path& Destination
+RainbowTable::RemoveStartpoints(
+    void
+)
+{
+    // Ensure the table is mapped writable
+    if (!MapTable(false))
+    {
+        std::cerr << "Unable to map the table" << std::endl;
+        return;
+    }
+
+    // Change the table type in the header
+    (*(TableHeader*)m_MappedTable).type = TypeCompressed;
+
+    // Loop through the chains
+    uint8_t* tableBase = m_MappedTable + sizeof(TableHeader);
+    uint8_t* writepointer = tableBase;
+    for (size_t chain = 0; chain < GetCount(); chain++)
+    {
+        uint8_t* endpoint = tableBase + (chain * ChainWidthForType(TypeUncompressed, GetMax())) + sizeof(rowindex_t);
+        memmove(writepointer, endpoint, GetMax());
+        writepointer += GetMax();
+    }
+
+    // Truncate the file
+    if (!UnmapTable())
+    {
+        std::cerr << "Error unmapping table after removing start points" << std::endl;
+        return;
+    }
+    
+    size_t newSize = sizeof(TableHeader) + (GetCount() * GetMax());
+    auto result = truncate(m_Path.c_str(), newSize);
+    if (result != 0)
+    {
+        std::cerr << "Error truncating file" << std::endl;
+        return;
+    }
+}
+
+void
+RainbowTable::ChangeType(
+    const std::filesystem::path& Destination,
+    const TableType Type
 )
 {
     FILE* fhw;
     TableHeader hdr;
 
-    if (!MapTable(true))
+    if (m_TableType == Type)
     {
-        std::cerr << "Error mapping table"  << std::endl;
+        std::cerr << "Won't convert to same type" << std::endl;
         return;
     }
 
-    // Copy the existing header but change the type
-    hdr = *((TableHeader*)m_MappedTable);
-    hdr.type = TypeUncompressed;
-
-    // Open the destination for writing
-    fhw = fopen(Destination.c_str(), "w");
-    if (fhw == nullptr)
-    {
-        std::cerr << "Error opening desination table for write" << std::endl;
-        return;
-    }
-
-    // Write the header
-    fwrite(&hdr, sizeof(hdr), 1, fhw);
-
+    // Output some basic information about the
+    // current table
     std::cout << "Table type: " << GetType() << std::endl;
     std::cout << "Chain width: " << GetChainWidth() << std::endl;
     std::cout << "Exporting " << m_Chains << " chains" << std::endl;
 
-    // Pointer to track the next read target
-    uint8_t* next = m_MappedTable + sizeof(TableHeader);
-
-    // Loop through and write each index followed by the next endpoint
-    for (uint64_t index = 0; index < m_Chains; index++, next += m_Max)
+    // If we are converting to a compressed file we need to do
+    // it in two stages. We need a full copy of the file so that
+    // we can then sort it by start points. Then we remove all 
+    // startpoints from the file
+    if (Type == TypeCompressed)
     {
-        fwrite(&index, sizeof(uint64_t), 1, fhw);
-        fwrite(next, sizeof(uint8_t), m_Max, fhw);
+        if (!std::filesystem::copy_file(m_Path, Destination, std::filesystem::copy_options::overwrite_existing))
+        {
+            std::cerr << "Error copying file for conversion" << std::endl;
+            return;
+        }
     }
-    fclose(fhw);
+    else
+    {
+        // Map the current table to memory
+        if (!MapTable(true))
+        {
+            std::cerr << "Error mapping table"  << std::endl;
+            return;
+        }
 
+        // Copy the existing header but change the type to uncompressed
+        hdr = *((TableHeader*)m_MappedTable);
+        hdr.type = TypeUncompressed;
+
+        // Open the destination for writing
+        fhw = fopen(Destination.c_str(), "w");
+        if (fhw == nullptr)
+        {
+            std::cerr << "Error opening desination table for write: " << Destination << std::endl;
+            return;
+        }
+
+        // Write the header
+        fwrite(&hdr, sizeof(hdr), 1, fhw);
+
+        // Pointer to track the next read target
+        uint8_t* next = m_MappedTable + sizeof(TableHeader);
+
+        // Loop through and write each index followed by the next endpoint
+        for (rowindex_t index = 0; index < m_Chains; index++, next += GetChainWidth())
+        {
+            fwrite(&index, sizeof(rowindex_t), 1, fhw);
+            fwrite(next, sizeof(char), m_Max, fhw);
+        }
+        fclose(fhw);
+    }
+
+    // Perform sort and cleanup work on the new table    
     RainbowTable newtable;
     newtable.SetPath(Destination);
 
@@ -1033,7 +1159,17 @@ RainbowTable::Decompress(
 
     std::cout << "Sorting " << newtable.GetCount() << " chains" << std::endl;
 
-    newtable.SortTable();
+    if (m_TableType == TypeCompressed)
+    {
+        newtable.SortTable();
+    }
+    else
+    {
+        // Sort the table by startpoint
+        newtable.SortStartpoints();
+        // Remove all startpoints and truncate
+        newtable.RemoveStartpoints();
+    }
 }
 
 /* static */ const Chain
@@ -1055,10 +1191,10 @@ RainbowTable::GetChain(
     fseek(fh, sizeof(TableHeader), SEEK_SET);
     fseek(fh, ChainWidthForType((TableType)hdr.type, hdr.max) * Index, SEEK_CUR);
 
-    uint64_t start = Index;
+    rowindex_t start = Index;
     if (hdr.type == (uint8_t)TypeUncompressed)
     {
-        fread(&start, sizeof(uint64_t), 1, fh);
+        fread(&start, sizeof(rowindex_t), 1, fh);
         
     }
     mpz_class lowerbound = WordGenerator::WordLengthIndex(hdr.min, charset);

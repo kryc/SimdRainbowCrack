@@ -96,7 +96,7 @@ main(
         {
             target = argv[i];
         }
-        else if (action == "decompress")
+        else if (action == "decompress" || action == "compress")
         {
             destination = argv[i];
         }
@@ -146,7 +146,7 @@ main(
             )
         );
     }
-    else if (action == "decompress")
+    else if (action == "decompress" || action == "compress")
     {
         if (!rainbow.ValidTable())
         {
@@ -160,7 +160,14 @@ main(
             return 1;
         }
 
-        rainbow.Decompress(destination);
+        if (action == "decompress")
+        {
+            rainbow.Decompress(destination);
+        }
+        else
+        {
+            rainbow.Compress(destination);
+        }
     }
     else if (action == "info")
     {
