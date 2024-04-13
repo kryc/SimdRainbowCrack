@@ -7,6 +7,7 @@
 //
 
 #include <cinttypes>
+#include <chrono>
 #include <cstddef>
 #include <fstream>
 #include <iostream>
@@ -59,6 +60,8 @@ RainbowTable::InitAndRunBuild(
         std::cerr << "Unable to open table for writing" << std::endl;
         return;
     }
+
+    m_ThreadTimers.resize(m_Threads);
 
     if (m_Threads > 1)
     {
@@ -124,6 +127,9 @@ RainbowTable::GenerateBlock(
     mpz_class lowerbound = WordGenerator::WordLengthIndex(m_Min, m_Charset);
     // Add the index for this chain
     mpz_class counter = lowerbound + blockStartId;
+    
+    // Start measuring the block generation time
+    auto start = std::chrono::system_clock::now();
 
     size_t iterations = m_Blocksize / SimdLanes();
     for (size_t iteration = 0; iteration < iterations; iteration++)
@@ -167,6 +173,9 @@ RainbowTable::GenerateBlock(
         }
     }
 
+    auto end = std::chrono::system_clock::now();
+    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+
     //
     // Post a task to the main thread
     // to save this block
@@ -176,8 +185,10 @@ RainbowTable::GenerateBlock(
         dispatch::bind(
             &RainbowTable::SaveBlock,
             this,
+            ThreadId,
             BlockId,
-            std::move(block)
+            std::move(block),
+            elapsed_ms
         )
     );
 
@@ -225,14 +236,24 @@ RainbowTable::WriteBlock(
 
 void
 RainbowTable::SaveBlock(
+    const size_t ThreadId,
     const size_t BlockId,
-    const std::vector<Chain> Block
+    const std::vector<Chain> Block,
+    const uint64_t Time
 )
 {
-    if (BlockId % m_Threads == 0)
+    m_ThreadTimers[ThreadId] = Time;
+
+    uint64_t averageMs = 0;
+    for (auto const& [thread, val] : m_LastBlockMs)
     {
-        std::cout << "'" << Block[0].Start() << "' -> '" << Block[0].End() << "'" << std::endl;
+        averageMs += val;
     }
+    averageMs /= m_Threads;
+
+    double chainsPerSec = (double)(averageMs * m_BlockSize) / 1000.f;
+    double hashesPerSec = chainsPerSec * m_Length;
+
     if (BlockId == m_NextWriteBlock)
     {
         WriteBlock(BlockId, Block);

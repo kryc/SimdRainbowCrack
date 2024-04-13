@@ -98,7 +98,7 @@ private:
     void ChangeType(const std::filesystem::path& Destination, const TableType Type);
     void StoreTableHeader(void) const;
     void GenerateBlock(const size_t ThreadId, const size_t BlockId);
-    void SaveBlock(const size_t BlockId, const std::vector<Chain> Block);
+    void SaveBlock(const size_t ThreadId, const size_t BlockId, const std::vector<Chain> Block, const uint64_t Time);
     void WriteBlock(const size_t BlockId, const ChainBlock& Block);
     void ThreadCompleted(const size_t ThreadId);
     std::optional<std::string> CrackOne(std::string& Target);
@@ -134,6 +134,7 @@ private:
     dispatch::DispatchPoolPtr m_DispatchPool;
     size_t m_ThreadsCompleted = 0;
     size_t m_ChainsWritten = 0;
+    std::vector<uint64_t> m_ThreadTimers;
     // For cracking
     uint8_t* m_MappedTable = nullptr;
     FILE* m_MappedTableFd = nullptr;
