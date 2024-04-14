@@ -68,7 +68,7 @@ public:
     void SetCount(const size_t Count) { m_Count = Count; };
     const size_t GetCount(void) const;
     void SetThreads(const size_t Threads) { m_Threads = Threads; };
-    void SetCharset(const std::string Charset) { m_Charset = Charset; };
+    void SetCharset(const std::string Charset) { m_Charset = ParseCharset(Charset); };
     const std::string& GetCharset(void) const { return m_Charset; };
     void SetType(const TableType Type) { m_TableType = Type; };
     bool SetType(const std::string Type);
@@ -99,6 +99,7 @@ private:
     void StoreTableHeader(void) const;
     void GenerateBlock(const size_t ThreadId, const size_t BlockId);
     void SaveBlock(const size_t ThreadId, const size_t BlockId, const std::vector<Chain> Block, const uint64_t Time);
+    void OutputStatus(const Chain& LastChain, const size_t BlockSize) const;
     void WriteBlock(const size_t BlockId, const ChainBlock& Block);
     void ThreadCompleted(const size_t ThreadId);
     std::optional<std::string> CrackOne(std::string& Target);
@@ -134,7 +135,7 @@ private:
     dispatch::DispatchPoolPtr m_DispatchPool;
     size_t m_ThreadsCompleted = 0;
     size_t m_ChainsWritten = 0;
-    std::vector<uint64_t> m_ThreadTimers;
+    std::map<size_t, uint64_t> m_ThreadTimers;
     // For cracking
     uint8_t* m_MappedTable = nullptr;
     FILE* m_MappedTableFd = nullptr;

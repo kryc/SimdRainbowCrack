@@ -240,8 +240,44 @@ WordGenerator::WordLengthIndex(
     mpz_class product;
     for (size_t i = 0; i < WordLength; i++)
     {
-        mpz_ui_pow_ui(product.get_mpz_t(), ASCII.size(), i);
+        mpz_ui_pow_ui(product.get_mpz_t(), Charset.size(), i);
         counter += product;
     }
     return counter;
+}
+
+const std::string&
+ParseCharset(
+    const std::string& Name
+)
+{
+    if (Name == "ASCII" || Name == "ascii")
+    {
+        return ASCII;
+    }
+    else if (Name == "lower")
+    {
+        return LOWER;
+    }
+    else if (Name == "upper")
+    {
+        return UPPER;
+    }
+    else if (Name == "numeric" || Name == "num")
+    {
+        return NUMERIC;
+    }
+    else if (Name == "alphanumeric" || Name == "alnum")
+    {
+        return ALPHANUMERIC;
+    }
+    else if (Name == "common")
+    {
+        return COMMON;
+    }
+    else if (Name == "commonshort")
+    {
+        return COMMON_SHORT;
+    }
+    return ASCII;
 }

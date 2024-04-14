@@ -19,12 +19,20 @@
 
 #include "WordGenerator.hpp"
 
-static uint32_t rotl(
+static inline uint32_t rotl(
     const uint32_t Value,
     const uint8_t Distance
 )
 {
     return (Value << Distance) | (Value >> (32 - Distance));
+}
+
+static inline uint32_t rotr(
+    const uint32_t Value,
+    const uint8_t Distance
+)
+{
+    return (Value >> Distance) | (Value << (32 - Distance));
 }
 
 class Reducer
@@ -50,7 +58,7 @@ public:
 protected:
     // A basic entropy extension function
     // It replaces the data in a destination buffer
-    // Based on SHA1 extension function
+    // Based on SHA256 extension function
     void ExtendEntropy(
         uint32_t* Buffer,
         const size_t LengthWords
@@ -62,7 +70,10 @@ protected:
         // Extend the buffer
         for (size_t i = LengthWords; i < sizeof(temp) / sizeof(*temp); i++)
         {
-            temp[i] = rotl(temp[i - LengthWords] ^ temp[i - 2], 1);
+            uint32_t s0 = rotr(temp[i - LengthWords], 7) ^ rotr(temp[i - LengthWords], 18) ^ (temp[i - LengthWords] >> 3);
+            uint32_t s1 = rotr(temp[i - 2], 17) ^ rotr(temp[i - 2], 19) ^ (temp[i - 2] >> 10);
+            temp[i] = s0 + s1;
+            // temp[i] = rotl(temp[i - LengthWords] ^ temp[i - 2], 1);
         }
         // Copy the extended buffer back
         memcpy(Buffer, &temp[LengthWords], LengthWords * sizeof(uint32_t));

@@ -36,7 +36,13 @@ main(
         return 0;
     }
 
+    size_t avx = SimdLanes() * 32;
+    std::cout << "SimdRainbowCrack (AVX-" << avx << ")" << std::endl;
+
     action = argv[1];
+
+    // Set the default charset
+    rainbow.SetCharset("ascii");
 
     for (int i = 2; i < argc; i++)
 	{
@@ -50,6 +56,17 @@ main(
         {
             ARGCHECK();
             rainbow.SetMax(std::atoi(argv[++i]));
+        }
+        else if (arg == "--chars")
+        {
+            ARGCHECK();
+            rainbow.SetMin(std::atoi(argv[++i]));
+            rainbow.SetMax(std::atoi(argv[i]));
+        }
+        else if (arg == "--charset")
+        {
+            ARGCHECK();
+            rainbow.SetCharset(argv[++i]);
         }
         else if (arg == "--length")
         {
@@ -101,8 +118,6 @@ main(
             destination = argv[i];
         }
     }
-
-    rainbow.SetCharset(ASCII);
 
     if (action == "build")
     {
