@@ -813,6 +813,7 @@ RainbowTable::CrackSimd(
     size_t lanes = Hashes.size();
     std::vector<std::vector<uint8_t>> hashbytes;
     auto reducer = GetReducer();
+    size_t cracked = 0;
     SimdHashBuffer words(m_Max);
     SimdHashBuffer hashes(m_HashWidth);
 
@@ -873,6 +874,12 @@ RainbowTable::CrackSimd(
                             match.value()
                         )
                     );
+                    // Track that we cracked one
+                    // If we have cracked all lanes, we can quit early
+                    if (++cracked == SimdLanes())
+                    {
+                        return;
+                    }
                 }
                 else
                 {
