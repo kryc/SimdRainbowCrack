@@ -277,10 +277,10 @@ RainbowTable::OutputStatus(
     char cpsChar = DoubleMultipleChar(chainsPerSec);
     char hpsChar = DoubleMultipleChar(hashesPerSec);
 
-    double chains = (double)m_Chains + m_ChainsWritten;
+    double chains = (double)m_StartingChains + m_ChainsWritten;
     char chainsChar = DoubleMultipleChar(chains);
 
-    double percent = chains / (m_StartingChains + m_ChainsWritten) * 100.f;
+    double percent = (chains / m_Count) * 100.f;
 
     char statusbuf[72];
     statusbuf[sizeof(statusbuf) - 1] = '\0';
