@@ -89,11 +89,7 @@ IsHex(
 
 	for (char c : String)
 	{
-		if (!isalnum(c))
-		{
-			return false;
-		}
-		else if((c > 'H' && c < 'a') || c > 'H')
+		if (!isxdigit(c))
 		{
 			return false;
 		}
