@@ -277,10 +277,10 @@ RainbowTable::OutputStatus(
     char cpsChar = DoubleMultipleChar(chainsPerSec);
     char hpsChar = DoubleMultipleChar(hashesPerSec);
 
-    double chains = (double)m_StartingChains + m_ChainsWritten;
+    double chains = (double)(m_StartingChains + m_ChainsWritten);
     char chainsChar = DoubleMultipleChar(chains);
 
-    double percent = (chains / m_Count) * 100.f;
+    double percent = ((double)(m_StartingChains + m_ChainsWritten) / (double)m_Count) * 100.f;
 
     char statusbuf[72];
     statusbuf[sizeof(statusbuf) - 1] = '\0';
@@ -752,7 +752,7 @@ RainbowTable::CrackOne(
     if (Hash.size() != m_HashWidth * 2)
     {
         std::cerr << "Invalid length of provided hash: " << Hash.size() << " != " << m_HashWidth * 2 << std::endl;
-        std::cerr << "Hash: " << Hash << std::endl;
+        std::cerr << "Hash: '" << Hash << "'" << std::endl;
         return std::nullopt;
     }
 
@@ -922,6 +922,54 @@ RainbowTable::CrackWorker(
         CrackSimd(
             std::move(next)
         );
+    }
+
+    // We dropped out, post that we are done
+    dispatch::PostTaskToDispatcher(
+        "main",
+        dispatch::bind(
+            &RainbowTable::ThreadCompleted,
+            this,
+            ThreadId
+        )
+    );
+}
+
+void
+RainbowTable::CrackOneWorker(
+    const size_t ThreadId
+)
+{
+    bool exhausted = false;
+    while (!exhausted)
+    {
+        // Read the next line from the input file
+        std::string next;
+        {
+            std::lock_guard<std::mutex> lock(m_HashFileStreamLock);
+            if(!std::getline(m_HashFileStream, next))
+            {
+                exhausted = true;
+                break;
+            }
+        }
+
+        auto result = CrackOne(
+            next
+        );
+
+        if (result.has_value())
+        {
+            dispatch::PostTaskToDispatcher(
+                "main",
+                dispatch::bind(
+                    &RainbowTable::ResultFound,
+                    this,
+                    next,
+                    result.value()
+                )
+            );
+        }
     }
 
     // We dropped out, post that we are done

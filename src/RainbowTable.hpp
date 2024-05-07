@@ -110,6 +110,7 @@ private:
     bool UnmapTable(void);
     std::unique_ptr<Reducer> GetReducer(void) const { return GetReducer(m_Min, m_Max, m_HashWidth, m_Charset); };
     void CrackWorker(const size_t ThreadId);
+    void CrackOneWorker(const size_t ThreadId);
     /*std::vector<std::tuple<std::string, std::string>>*/ void CrackSimd(std::vector<std::string> Hashes);
     void ResultFound(const std::string Hash, const std::string Result);
     // General purpose
