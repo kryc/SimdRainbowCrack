@@ -52,8 +52,18 @@ public:
         char* Destination,
         const size_t DestLength,
         const uint8_t* Hash,
+        const size_t HashLengthWords,
         const size_t Iteration
     ) = 0;
+    virtual size_t Reduce(
+        char* Destination,
+        const size_t DestLength,
+        const uint8_t* Hash,
+        const size_t Iteration
+    )
+    {
+        return Reduce(Destination, DestLength, Hash, m_HashLengthWords, Iteration);
+    }
     virtual ~Reducer() {};
 protected:
     // A basic entropy extension function
@@ -104,6 +114,7 @@ public:
         char* Destination,
         const size_t DestLength,
         const uint8_t* Hash,
+        const size_t HashLengthWords,
         const size_t Iteration
     ) override
     {
@@ -191,10 +202,11 @@ public:
         char* Destination,
         const size_t DestLength,
         const uint8_t* Hash,
+        const size_t HashLengthWords,
         const size_t Iteration
     ) override
     {
-        uint32_t hashBuffer[m_HashLengthWords];
+        uint32_t hashBuffer[HashLengthWords];
         memcpy(hashBuffer, Hash, m_HashLength);
         // Repeatedly try to load the hash integer until it is in range
         // we do this to avoid a modulo bias favouring reduction at the bottom
@@ -203,9 +215,9 @@ public:
         size_t offset = 0;
         while (reduction > m_IndexRange)
         {
-            if (offset + m_WordsRequired == m_HashLengthWords)
+            if (offset + m_WordsRequired == HashLengthWords)
             {
-                ExtendEntropy((uint32_t*)hashBuffer, m_HashLengthWords);
+                ExtendEntropy((uint32_t*)hashBuffer, HashLengthWords);
                 offset = 0;
             }
             // Mask off the most significant bit
@@ -255,12 +267,14 @@ public:
         char* Destination,
         const size_t DestLength,
         const uint8_t* Hash,
+        const size_t HashLengthWords,
         const size_t Iteration
     ) override
     {
-        uint8_t buffer[m_HashLength];
+        const size_t HashLength = HashLengthWords * sizeof(uint32_t);
+        uint8_t buffer[HashLength];
         // Copy hash to buffer
-        memcpy(buffer, Hash, m_HashLength);
+        memcpy(buffer, Hash, HashLength);
         // Loop and get all characters
         size_t bufferOffset = 0;
         size_t count = 0;
@@ -268,9 +282,9 @@ public:
         
         while (count < m_Max /* m_Min == m_Max */)
         {
-            if (bufferOffset == m_HashLength)
+            if (bufferOffset == HashLength)
             {
-                ExtendEntropy((uint32_t*)buffer, m_HashLengthWords);
+                ExtendEntropy((uint32_t*)buffer, HashLengthWords);
                 bufferOffset = 0;
             }
 
