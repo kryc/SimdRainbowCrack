@@ -22,6 +22,26 @@
     }
 
 int
+VerifyAndLoad(
+    RainbowTable& Table
+)
+{
+    if (!Table.ValidTable())
+    {
+        std::cerr << "Provided table not found or invalid" << std::endl;
+        return 1;
+    }
+
+    if (!Table.LoadTable())
+    {
+        std::cerr << "Error loading table file" << std::endl;
+        return 1;
+    }
+
+    return 0;
+}
+
+int
 main(
     int argc,
     char* argv[]
@@ -109,7 +129,7 @@ main(
         {
             rainbow.SetPath(argv[i]);
         }
-        else if (action == "crack")
+        else if (action == "crack" || action == "test")
         {
             target = argv[i];
         }
@@ -140,16 +160,10 @@ main(
     }
     else if (action == "crack")
     {
-        if (!rainbow.ValidTable())
+        int check = VerifyAndLoad(rainbow);
+        if (check != 0)
         {
-            std::cerr << "Provided table not found or invalid" << std::endl;
-            return 1;
-        }
-
-        if (!rainbow.LoadTable())
-        {
-            std::cerr << "Error loading table file" << std::endl;
-            return 1;
+            return check;
         }
 
         auto mainDispatcher = dispatch::CreateAndEnterDispatcher(
@@ -211,6 +225,18 @@ main(
         std::cout << "Length:    " << rainbow.GetLength() << std::endl;
         std::cout << "Count:     " << rainbow.GetCount() << std::endl;
         std::cout << "Charset:   \"" << rainbow.GetCharset() << "\"" << std::endl;
+    }
+    else if (action == "test")
+    {
+        int check = VerifyAndLoad(rainbow);
+        if (check != 0)
+        {
+            return check;
+        }
+
+        auto hash = rainbow.DoHashHex((uint8_t*)&target[0], target.size());
+        std::cout << "Testing for password \":" << target << "\": " << hash << std::endl;
+        rainbow.Crack(hash);
     }
 
     return 0;

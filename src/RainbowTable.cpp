@@ -663,6 +663,34 @@ RainbowTable::DoHash(
     }
 }
 
+/* static */ std::string
+RainbowTable::DoHashHex(
+    const uint8_t* Data,
+    const size_t Length,
+    const HashAlgorithm Algorithm
+)
+{
+    uint8_t buffer[MAX_BUFFER_SIZE];
+    switch (Algorithm)
+    {
+    case HashMd5:
+        MD5(Data, Length, buffer);
+        return Util::ToHex(buffer, MD5_SIZE);
+        break;
+    case HashSha1:
+        SHA1(Data, Length, buffer);
+        return Util::ToHex(buffer, SHA1_SIZE);
+        break;
+    case HashSha256:
+        SHA256(Data, Length, buffer);
+        return Util::ToHex(buffer, SHA256_SIZE);
+        break;
+    default:
+        return std::string();
+        break;
+    }
+}
+
 const size_t
 RainbowTable::FindEndpoint(
     const char* Endpoint,
