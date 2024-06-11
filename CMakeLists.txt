@@ -15,7 +15,9 @@ elseif(AVX STREQUAL "512")
     set(AVXFLAG "-mavx512bw" CACHE STRING "" FORCE)
 endif()
 
+add_definitions(-DOPTIMIZE)
 add_subdirectory(./SimdHash/)
+remove_definitions(-DOPTIMIZE)
 add_subdirectory(./libdispatchqueue/)
 
 # specify clang
