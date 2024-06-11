@@ -11,6 +11,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -73,6 +74,7 @@ public:
     void SetType(const TableType Type) { m_TableType = Type; };
     bool SetType(const std::string Type);
     std::string GetType(void) const { return m_TableType == TypeCompressed ? "Compressed" : "Uncompressed";  };
+    float GetCoverage(void);
     bool TableExists(void) const { return std::filesystem::exists(m_Path); };
     static bool GetTableHeader(const std::filesystem::path& Path, TableHeader* Header);
     static bool IsTableFile(const std::filesystem::path& Path);
@@ -93,6 +95,7 @@ public:
     static const Chain GetChain(const std::filesystem::path& Path, const size_t Index);
     static const Chain ComputeChain(const size_t Index, const size_t Min, const size_t Max, const size_t Length, const HashAlgorithm Algorithm, const std::string& Charset);
     static std::unique_ptr<Reducer> GetReducer(const size_t Min, const size_t Max, const size_t HashWidth, const std::string& Charset);
+    inline const uint8_t* GetEndpointAt(const size_t Index) const;
 protected:
     void SortStartpoints(void);
     void RemoveStartpoints(void);
@@ -115,6 +118,7 @@ private:
     void CrackOneWorker(const size_t ThreadId);
     /*std::vector<std::tuple<std::string, std::string>>*/ void CrackSimd(std::vector<std::string> Hashes);
     void ResultFound(const std::string Hash, const std::string Result);
+    void IndexTable(void);
     // General purpose
     std::filesystem::path m_Path;
     bool m_PathLoaded = false;
@@ -144,6 +148,9 @@ private:
     FILE* m_MappedTableFd = nullptr;
     size_t m_MappedFileSize;
     size_t m_MappedTableSize;
+    static constexpr size_t LOOKUP_SIZE = std::numeric_limits<uint16_t>::max() + 1;
+    const uint8_t* m_MappedTableLookup[LOOKUP_SIZE];
+    size_t m_MappedTableLookupSize[LOOKUP_SIZE];
     size_t m_FalsePositives = 0;
     bool m_MappedReadOnly = false;
     std::ifstream m_HashFileStream;

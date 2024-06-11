@@ -218,13 +218,15 @@ main(
             return 1;
         }
 
-        std::cout << "Type:      " << rainbow.GetType() << std::endl;
-        std::cout << "Algorithm: " << rainbow.GetAlgorithmString() << std::endl;
-        std::cout << "Min:       " << rainbow.GetMin() << std::endl;
-        std::cout << "Max:       " << rainbow.GetMax() << std::endl;
-        std::cout << "Length:    " << rainbow.GetLength() << std::endl;
-        std::cout << "Count:     " << rainbow.GetCount() << std::endl;
-        std::cout << "Charset:   \"" << rainbow.GetCharset() << "\"" << std::endl;
+        std::cout << "Type:        " << rainbow.GetType() << std::endl;
+        std::cout << "Algorithm:   " << rainbow.GetAlgorithmString() << std::endl;
+        std::cout << "Min:         " << rainbow.GetMin() << std::endl;
+        std::cout << "Max:         " << rainbow.GetMax() << std::endl;
+        std::cout << "Length:      " << rainbow.GetLength() << std::endl;
+        std::cout << "Count:       " << rainbow.GetCount() << std::endl;
+        std::cout << "Charset:     \"" << rainbow.GetCharset() << "\"" << std::endl;
+        std::cout << "Charset Len: " << rainbow.GetCharset().size() << std::endl;
+        std::cout << "KS Coverage: " << rainbow.GetCoverage() << std::endl;
     }
     else if (action == "test")
     {
@@ -235,8 +237,16 @@ main(
         }
 
         auto hash = rainbow.DoHashHex((uint8_t*)&target[0], target.size());
-        std::cout << "Testing for password \":" << target << "\": " << hash << std::endl;
-        rainbow.Crack(hash);
+        std::cout << "Testing for password \"" << target << "\": " << hash << std::endl;
+
+        auto mainDispatcher = dispatch::CreateAndEnterDispatcher(
+            "main",
+            dispatch::bind(
+                &RainbowTable::Crack,
+                &rainbow,
+                hash
+            )
+        );
     }
 
     return 0;
