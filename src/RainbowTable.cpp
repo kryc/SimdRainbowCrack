@@ -118,8 +118,8 @@ RainbowTable::GenerateBlock(
     size_t chainCount = m_Blocksize % SimdLanes() == 0 ? m_Blocksize : m_Blocksize + SimdLanes() % SimdLanes();
     block.reserve(chainCount);
 
-    SimdHashBuffer words(m_Max);
-    SimdHashBuffer hashes(m_HashWidth);
+    SimdHashBufferFixed<MAX_OPTIMIZED_BUFFER_SIZE> words;
+    std::array<uint8_t, MAX_HASH_SIZE * MAX_LANES> hashes;
 
     // Calculate lower bound
     mpz_class lowerbound = WordGenerator::WordLengthIndex(m_Min, m_Charset);
@@ -151,14 +151,15 @@ RainbowTable::GenerateBlock(
             // Perform hash
             SimdHashContext ctx;
             SimdHashInit(&ctx, m_Algorithm);
-            SimdHashUpdate(&ctx, words.Lengths(), words.ConstBuffers());
+            SimdHashUpdate(&ctx, words.GetLengths(), words.ConstBuffers());
             SimdHashFinalize(&ctx);
-            SimdHashGetHashes(&ctx, hashes.Buffer());
+            SimdHashGetHashes(&ctx, &hashes[0]);
 
             // Perform reduce
+            const size_t hashWidth = m_HashWidth;
             for (size_t h = 0; h < SimdLanes(); h++)
             {
-                const uint8_t* hash = hashes[h];
+                const uint8_t* hash = &hashes[h * hashWidth];
                 auto length = reducer->Reduce((char*)words[h], m_Max, hash, i);
                 words.SetLength(h, length);
             }
@@ -887,6 +888,12 @@ RainbowTable::FindEndpoint(
         const uint8_t* tableStart = m_MappedTableLookup[index];
         const size_t tablelength = m_MappedTableLookupSize[index];
 
+        // Endpoint not found in lookup table
+        if (tableStart == 0)
+        {
+            return (size_t)-1;
+        }
+
         // Perform the search
         size_t low = 0;
         size_t high = tablelength - 1;
@@ -1006,8 +1013,9 @@ RainbowTable::CrackSimd(
     std::vector<std::vector<uint8_t>> hashbytes;
     auto reducer = GetReducer();
     size_t cracked = 0;
-    SimdHashBuffer words(m_Max);
-    SimdHashBuffer hashes(m_HashWidth);
+    SimdHashBufferFixed<MAX_OPTIMIZED_BUFFER_SIZE> words;
+    std::array<uint8_t, MAX_HASH_SIZE * MAX_LANES> hashes;
+    const size_t hashWidth = m_HashWidth;
 
     // Parse the hex strings into byte arrays
     for (size_t i = 0; i < lanes; i++)
@@ -1022,7 +1030,7 @@ RainbowTable::CrackSimd(
         // Copy the hashes into the Simd buffers
         for (size_t j = 0; j < lanes; j++)
         {
-            memcpy(hashes[j], hashbytes[j].data(), hashbytes[j].size());
+            memcpy(&hashes[j * hashWidth], hashbytes[j].data(), hashbytes[j].size());
         }
 
         // Perform the full chain from the next hop
@@ -1031,7 +1039,7 @@ RainbowTable::CrackSimd(
             // Perform the reductions
             for (size_t h = 0; h < lanes; h++)
             {
-                const uint8_t* hash = hashes[h];
+                const uint8_t* hash = &hashes[h * hashWidth];
                 auto length = reducer->Reduce((char*)words[h], m_Max, hash, j);
                 words.SetLength(h, length);
             }
@@ -1039,15 +1047,15 @@ RainbowTable::CrackSimd(
             // Perform hash
             SimdHashContext ctx;
             SimdHashInit(&ctx, m_Algorithm);
-            SimdHashUpdate(&ctx, words.Lengths(), words.ConstBuffers());
+            SimdHashUpdate(&ctx, words.GetLengths(), words.ConstBuffers());
             SimdHashFinalize(&ctx);
-            SimdHashGetHashes(&ctx, hashes.Buffer());
+            SimdHashGetHashes(&ctx, &hashes[0]);
         }
 
         // Perform the final reductions and check
         for (size_t h = 0; h < lanes; h++)
         {
-            const uint8_t* hash = hashes[h];
+            const uint8_t* hash = &hashes[h * hashWidth];
             auto length = reducer->Reduce((char*)words[h], m_Max, hash, m_Length - 1);
             
             // Check end, if it matches, we can perform one full chain to see if we find it
