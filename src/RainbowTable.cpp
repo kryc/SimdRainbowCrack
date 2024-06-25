@@ -23,6 +23,7 @@
 #include "SimdHashBuffer.hpp"
 
 #include "Chain.hpp"
+#include "Common.hpp"
 #include "RainbowTable.hpp"
 #include "Util.hpp"
 
@@ -114,15 +115,13 @@ RainbowTable::GenerateBlock(
     }
 
     auto reducer = GetReducer();
-    std::vector<Chain> block;
-    size_t chainCount = m_Blocksize % SimdLanes() == 0 ? m_Blocksize : m_Blocksize + SimdLanes() % SimdLanes();
-    block.reserve(chainCount);
+    std::vector<SmallString> block(m_Blocksize);
 
     SimdHashBufferFixed<MAX_OPTIMIZED_BUFFER_SIZE> words;
     std::array<uint8_t, MAX_HASH_SIZE * MAX_LANES> hashes;
 
     // Calculate lower bound
-    mpz_class lowerbound = WordGenerator::WordLengthIndex(m_Min, m_Charset);
+    const mpz_class lowerbound = CalculateLowerBound();
     // Add the index for this chain
     mpz_class counter = lowerbound + blockStartId;
     
@@ -138,10 +137,6 @@ RainbowTable::GenerateBlock(
             auto length = WordGenerator::GenerateWord((char*)words[i], m_Max, counter, m_Charset);
             assert(length != -1);
             words.SetLength(i, length);
-            Chain chain;
-            chain.SetStart(words[i], length);
-            chain.SetIndex(counter - lowerbound);
-            block.push_back(std::move(chain));
             counter++;
         }
 
@@ -169,7 +164,7 @@ RainbowTable::GenerateBlock(
         
         for (size_t h = 0; h < SimdLanes(); h++)
         {
-            block[iteration * SimdLanes() + h].SetEnd(words[h], words.GetLength(h));
+            block[iteration * SimdLanes() + h].Set(words[h], words.GetLength(h));
         }
     }
 
@@ -209,27 +204,27 @@ RainbowTable::GenerateBlock(
 void
 RainbowTable::WriteBlock(
     const size_t BlockId,
-    const ChainBlock& Block
+    const std::vector<SmallString>& Block
 )
 {
     // Create a byte buffer so we can do it on one shot
-    std::vector<uint8_t> buffer;
-    size_t buffersize = m_ChainWidth * m_Blocksize;
-    buffer.resize(buffersize);
+    size_t bufferSize = m_ChainWidth * m_Blocksize;
+    std::vector<uint8_t> buffer(bufferSize);
     uint8_t* bufferptr = &buffer[0];
+    size_t index = BlockId;
     // Loop through the chains and add them to the buffer
-    for (auto& chain : Block)
+    for (auto& endpoint : Block)
     {
         if (m_TableType == TypeUncompressed)
         {
-            *((rowindex_t*)bufferptr) = chain.Index().get_ui();;
+            *((rowindex_t*)bufferptr) = index++;
             bufferptr += sizeof(rowindex_t);
         }
-        memcpy(bufferptr, chain.End().c_str(), chain.End().size());
+        memcpy(bufferptr, endpoint.Value, endpoint.Length);
         bufferptr += m_Max;
     }
     // Perform the write in a single shot and flush
-    fwrite(&buffer[0], buffersize, sizeof(uint8_t), m_WriteHandle);
+    fwrite(&buffer[0], bufferSize, sizeof(uint8_t), m_WriteHandle);
     fflush(m_WriteHandle);
     m_ChainsWritten += Block.size();
 }
@@ -259,8 +254,7 @@ DoubleMultipleChar(
 
 void
 RainbowTable::OutputStatus(
-    const Chain& LastChain,
-    const size_t BlockSize
+    const SmallString& LastEndpoint
 ) const
 {
     assert(dispatch::CurrentDispatcher() == dispatch::GetDispatcher("main").get());
@@ -272,7 +266,7 @@ RainbowTable::OutputStatus(
     }
     averageMs /= m_Threads;
 
-    double chainsPerSec = 1000.f * BlockSize / averageMs;
+    double chainsPerSec = 1000.f * m_Blocksize / averageMs;
     double hashesPerSec = chainsPerSec * m_Length;
 
     char cpsChar = DoubleMultipleChar(chainsPerSec);
@@ -290,7 +284,7 @@ RainbowTable::OutputStatus(
     memset(statusbuf, ' ', sizeof(statusbuf) - 1);
     int count = snprintf(
         statusbuf, sizeof(statusbuf),
-        "C:%.1lf%c(%.1f%%) C/s: %.1lf%c H/s:%.1lf%c S:\"%s\" E:\"%s\"",
+        "C:%.1lf%c(%.1f%%) C/s: %.1lf%c H/s:%.1lf%c E:\"%s\"",
             chains,
             chainsChar,
             percent,
@@ -298,8 +292,7 @@ RainbowTable::OutputStatus(
             cpsChar,
             hashesPerSec,
             hpsChar,
-            LastChain.Start().c_str(),
-            LastChain.End().c_str()
+            (char*)LastEndpoint.Value
     );
     if (count < sizeof(statusbuf) - 1)
     {
@@ -312,11 +305,13 @@ void
 RainbowTable::SaveBlock(
     const size_t ThreadId,
     const size_t BlockId,
-    const std::vector<Chain> Block,
+    const std::vector<SmallString> Block,
     const uint64_t Time
 )
 {
     m_ThreadTimers[ThreadId] = Time;
+
+    OutputStatus(Block[0]);
 
     if (BlockId == m_NextWriteBlock)
     {
@@ -333,8 +328,6 @@ RainbowTable::SaveBlock(
     {
         m_WriteCache.emplace(BlockId, std::move(Block));
     }
-
-    OutputStatus(Block[Block.size() - 1], Block.size());
 }
 
 bool

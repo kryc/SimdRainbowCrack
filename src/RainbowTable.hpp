@@ -21,6 +21,7 @@
 #include "simdhash.h"
 
 #include "Chain.hpp"
+#include "Common.hpp"
 #include "Reduce.hpp"
 
 
@@ -65,7 +66,7 @@ public:
     const size_t GetMax(void) const { return m_Max; };
     void SetLength(const size_t Length) { m_Length = Length; };
     const size_t GetLength(void) const { return m_Length; };
-    void SetBlocksize(const size_t Blocksize) { m_Blocksize = Blocksize; };
+    void SetBlocksize(const size_t Blocksize) { m_Blocksize = Blocksize % SimdLanes() == 0 ? Blocksize : (Blocksize + SimdLanes()) % SimdLanes(); };
     void SetCount(const size_t Count) { m_Count = Count; };
     const size_t GetCount(void) const;
     void SetThreads(const size_t Threads) { m_Threads = Threads; };
@@ -103,9 +104,9 @@ private:
     void ChangeType(const std::filesystem::path& Destination, const TableType Type);
     void StoreTableHeader(void) const;
     void GenerateBlock(const size_t ThreadId, const size_t BlockId);
-    void SaveBlock(const size_t ThreadId, const size_t BlockId, const std::vector<Chain> Block, const uint64_t Time);
-    void OutputStatus(const Chain& LastChain, const size_t BlockSize) const;
-    void WriteBlock(const size_t BlockId, const ChainBlock& Block);
+    void SaveBlock(const size_t ThreadId, const size_t BlockId, const std::vector<SmallString> Block, const uint64_t Time);
+    void OutputStatus(const SmallString& LastEndpoint) const;
+    void WriteBlock(const size_t BlockId, const std::vector<SmallString>& Block);
     void ThreadCompleted(const size_t ThreadId);
     std::optional<std::string> CrackOne(std::string& Target);
     const size_t FindEndpoint(const char* Endpoint, const size_t Length) const;
@@ -119,6 +120,8 @@ private:
     /*std::vector<std::tuple<std::string, std::string>>*/ void CrackSimd(std::vector<std::string> Hashes);
     void ResultFound(const std::string Hash, const std::string Result);
     void IndexTable(void);
+    static const mpz_class CalculateLowerBound(const size_t Min, const std::string& Charset) { return WordGenerator::WordLengthIndex(Min, Charset); };
+    const mpz_class CalculateLowerBound(void) const { return CalculateLowerBound(m_Min, m_Charset); };
     // General purpose
     std::filesystem::path m_Path;
     bool m_PathLoaded = false;
@@ -138,7 +141,7 @@ private:
     size_t m_StartingChains = 0;
     FILE* m_WriteHandle = NULL;
     size_t m_NextWriteBlock = 0;
-    std::map<size_t, ChainBlock> m_WriteCache;
+    std::map<size_t, const std::vector<SmallString>> m_WriteCache;
     dispatch::DispatchPoolPtr m_DispatchPool;
     size_t m_ThreadsCompleted = 0;
     size_t m_ChainsWritten = 0;
