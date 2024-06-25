@@ -120,21 +120,20 @@ RainbowTable::GenerateBlock(
     SimdHashBufferFixed<MAX_OPTIMIZED_BUFFER_SIZE> words;
     std::array<uint8_t, MAX_HASH_SIZE * MAX_LANES> hashes;
 
-    // Calculate lower bound
-    const mpz_class lowerbound = CalculateLowerBound();
-    // Add the index for this chain
-    mpz_class counter = lowerbound + blockStartId;
+    // Calculate lower bound and add the current index
+    mpz_class counter = CalculateLowerBound() + blockStartId;
+    const size_t hashWidth = m_HashWidth;
     
     // Start measuring the block generation time
-    auto start = std::chrono::system_clock::now();
+    const auto start = std::chrono::system_clock::now();
 
-    size_t iterations = m_Blocksize / SimdLanes();
+    const size_t iterations = m_Blocksize / SimdLanes();
     for (size_t iteration = 0; iteration < iterations; iteration++)
     {
         // Set the chain start point
         for (size_t i = 0; i < SimdLanes(); i++)
         {
-            auto length = WordGenerator::GenerateWord((char*)words[i], m_Max, counter, m_Charset);
+            const auto length = WordGenerator::GenerateWord((char*)words[i], m_Max, counter, m_Charset);
             assert(length != -1);
             words.SetLength(i, length);
             counter++;
@@ -151,11 +150,10 @@ RainbowTable::GenerateBlock(
             SimdHashGetHashes(&ctx, &hashes[0]);
 
             // Perform reduce
-            const size_t hashWidth = m_HashWidth;
             for (size_t h = 0; h < SimdLanes(); h++)
             {
                 const uint8_t* hash = &hashes[h * hashWidth];
-                auto length = reducer->Reduce((char*)words[h], m_Max, hash, i);
+                const auto length = reducer->Reduce((char*)words[h], m_Max, hash, i);
                 words.SetLength(h, length);
             }
         }
@@ -168,8 +166,8 @@ RainbowTable::GenerateBlock(
         }
     }
 
-    auto end = std::chrono::system_clock::now();
-    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    const auto end = std::chrono::system_clock::now();
+    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
     //
     // Post a task to the main thread
@@ -190,7 +188,7 @@ RainbowTable::GenerateBlock(
     //
     // Post the next task
     //
-    size_t nextblock = BlockId + m_Threads;
+    const size_t nextblock = BlockId + m_Threads;
     dispatch::PostTaskFast(
         dispatch::bind(
             &RainbowTable::GenerateBlock,
