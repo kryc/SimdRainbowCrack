@@ -189,9 +189,21 @@ WordGenerator::Parse(
     mpz_class num;
     for (const char& c : Word)
     {
-        num = num * Charset.size() + Charset.find_first_of(c);
+        num = num * Charset.size() + (Charset.find_first_of(c) + 1);
     }
-    return ++num;
+    return num;
+}
+
+// static
+const mpz_class
+WordGenerator::ParseReversed(
+    const std::string& Word,
+    const std::string& Charset
+)
+{
+    std::string reversed = Word;
+    std::reverse(reversed.begin(), reversed.end());
+    return WordGenerator::Parse(reversed, Charset);
 }
 
 // static
@@ -204,9 +216,21 @@ WordGenerator::Parse(
     mpz_class num;
     for (const char& c : Word)
     {
-        num = num * LookupTable[256] + LookupTable[c];
+        num = num * LookupTable[256] + (LookupTable[c] + 1);
     }
-    return ++num;
+    return num;
+}
+
+// static
+const mpz_class
+WordGenerator::ParseReversed(
+    const std::string& Word,
+    const std::vector<uint8_t>& LookupTable
+)
+{
+    std::string reversed = Word;
+    std::reverse(reversed.begin(), reversed.end());
+    return WordGenerator::Parse(reversed, LookupTable);
 }
 
 // static

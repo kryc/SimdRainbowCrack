@@ -54,12 +54,16 @@ public:
     static const std::vector<uint8_t> GenerateParsingLookupTable(const std::string& Charset);
     const std::vector<uint8_t> GenerateParsingLookupTable(void) const { return GenerateParsingLookupTable(m_Charset); };
     static const mpz_class Parse(const std::string& Word, const std::string& Charset);
+    static const mpz_class ParseReversed(const std::string& Word, const std::string& Charset);
     static const mpz_class Parse(const std::string& Word, const std::vector<uint8_t>& LookupTable);
+    static const mpz_class ParseReversed(const std::string& Word, const std::vector<uint8_t>& LookupTable);
     const mpz_class Parse(const std::string& Word) const { return Parse(Word, m_Charset); };
+    const mpz_class ParseReversed(const std::string& Word) const { return ParseReversed(Word, m_Charset); };
     void SetPrefix(std::string& Prefix) { m_Prefix = Prefix; };
     void SetPostfix(std::string& Postfix) { m_Postfix = Postfix; };
     const std::string GetCharset(void) { return m_Charset; };
     static const mpz_class WordLengthIndex(const size_t WordLength, const std::string& Charset);
+    const mpz_class WordLengthIndex(const size_t WordLength) { return WordGenerator::WordLengthIndex(WordLength, m_Charset); };
 private:
     const std::string m_Charset;
     const std::vector<uint8_t> m_LookupTable;
