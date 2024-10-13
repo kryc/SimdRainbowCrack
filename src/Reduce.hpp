@@ -52,18 +52,8 @@ public:
         char* Destination,
         const size_t DestLength,
         const uint8_t* Hash,
-        const size_t HashLengthWords,
         const size_t Iteration
     ) = 0;
-    virtual size_t Reduce(
-        char* Destination,
-        const size_t DestLength,
-        const uint8_t* Hash,
-        const size_t Iteration
-    )
-    {
-        return Reduce(Destination, DestLength, Hash, m_HashLengthWords, Iteration);
-    }
     virtual ~Reducer() {};
 protected:
     // A basic entropy extension function
@@ -80,10 +70,13 @@ protected:
         // Extend the buffer
         for (size_t i = LengthWords; i < sizeof(temp) / sizeof(*temp); i++)
         {
+#ifndef EXTEND_SIMPLE
             uint32_t s0 = rotr(temp[i - LengthWords], 7) ^ rotr(temp[i - LengthWords], 18) ^ (temp[i - LengthWords] >> 3);
             uint32_t s1 = rotr(temp[i - 2], 17) ^ rotr(temp[i - 2], 19) ^ (temp[i - 2] >> 10);
             temp[i] = s0 + s1;
-            // temp[i] = rotl(temp[i - LengthWords] ^ temp[i - 2], 1);
+#else
+            temp[i] = rotl(temp[i - LengthWords] ^ temp[i - 2], 1);
+#endif
         }
         // Copy the extended buffer back
         memcpy(Buffer, &temp[LengthWords], LengthWords * sizeof(uint32_t));
@@ -114,7 +107,6 @@ public:
         char* Destination,
         const size_t DestLength,
         const uint8_t* Hash,
-        const size_t HashLengthWords,
         const size_t Iteration
     ) override
     {
@@ -180,33 +172,32 @@ public:
             m_BitsRequired++;
         }
         // Calculate the number of whole bytes required
-        m_WordsRequired = m_BitsRequired / 32;
+        m_BytesRequired = m_BitsRequired / 8;
         // The number of bits to mask off the most significant
         // byte to constrain the value
-        size_t bitsoverflow = m_BitsRequired % 32;
+        size_t bitsoverflow = m_BitsRequired % 8;
         // If we overflow an 8-bit boundary then we
         // need to use an extra byte
         if (bitsoverflow != 0)
         {
-            m_WordsRequired++;
+            m_BytesRequired++;
         }
         // We need to mask off the top additional
         // bits though
-        size_t bitstomask = 32 - bitsoverflow;
-        m_MsbMask = 0xffffffff >> bitstomask;
-        // std::cerr << m_BitsRequired << ' ' << m_WordsRequired << ' ' << bitsoverflow << ' ' << std::hex << (int)m_MsbMask << std::endl;
-        assert(m_WordsRequired * sizeof(uint32_t) <= m_HashLength);
+        size_t bitstomask = 8 - bitsoverflow;
+        m_MsbMask = 0xff >> bitstomask;
+        // std::cerr << m_BitsRequired << ' ' << m_BytesRequired << ' ' << bitsoverflow << ' ' << std::hex << (int)m_MsbMask << std::endl;
+        assert(m_BytesRequired * sizeof(uint8_t) <= m_HashLength);
     };
 
     size_t Reduce(
         char* Destination,
         const size_t DestLength,
         const uint8_t* Hash,
-        const size_t HashLengthWords,
         const size_t Iteration
     ) override
     {
-        uint32_t hashBuffer[HashLengthWords];
+        uint8_t hashBuffer[m_HashLength];
         memcpy(hashBuffer, Hash, m_HashLength);
         // Repeatedly try to load the hash integer until it is in range
         // we do this to avoid a modulo bias favouring reduction at the bottom
@@ -215,16 +206,16 @@ public:
         size_t offset = 0;
         while (reduction > m_IndexRange)
         {
-            if (offset + m_WordsRequired == HashLengthWords)
+            if (offset + m_BytesRequired == m_HashLength)
             {
-                ExtendEntropy((uint32_t*)hashBuffer, HashLengthWords);
+                ExtendEntropy((uint32_t*)hashBuffer, m_HashLengthWords);
                 offset = 0;
             }
             // Mask off the most significant bit
-            uint32_t savedWord = hashBuffer[0];
+            uint8_t savedWord = hashBuffer[0];
             hashBuffer[offset] = savedWord & m_MsbMask;
             // Parse the hash as a single bigint
-            mpz_import(reduction.get_mpz_t(), m_WordsRequired, 1, sizeof(uint32_t), 0, 0, &hashBuffer[offset]);
+            mpz_import(reduction.get_mpz_t(), m_BytesRequired, 1, sizeof(uint8_t), 0, 0, &hashBuffer[offset]);
             // Replace the original entropy in case we need to extend
             hashBuffer[offset] = savedWord;
             // Move the offset along
@@ -240,7 +231,7 @@ public:
     }
 private:
     size_t m_BitsRequired;
-    size_t m_WordsRequired;
+    size_t m_BytesRequired;
     uint32_t m_MsbMask;
 };
 
@@ -267,11 +258,10 @@ public:
         char* Destination,
         const size_t DestLength,
         const uint8_t* Hash,
-        const size_t HashLengthWords,
         const size_t Iteration
     ) override
     {
-        const size_t HashLength = HashLengthWords * sizeof(uint32_t);
+        const size_t HashLength = m_HashLength;
         uint8_t buffer[HashLength];
         // Copy hash to buffer
         memcpy(buffer, Hash, HashLength);
@@ -284,7 +274,7 @@ public:
         {
             if (bufferOffset == HashLength)
             {
-                ExtendEntropy((uint32_t*)buffer, HashLengthWords);
+                ExtendEntropy((uint32_t*)buffer, m_HashLengthWords);
                 bufferOffset = 0;
             }
 

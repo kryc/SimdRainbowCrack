@@ -1031,7 +1031,12 @@ RainbowTable::CrackSimd(
             for (size_t h = 0; h < lanes; h++)
             {
                 const uint8_t* hash = &hashes[h * hashWidth];
-                auto length = reducer->Reduce((char*)words[h], m_Max, hash, j);
+                const size_t length = reducer->Reduce((char*)words[h], m_Max, hash, j);
+                assert(length != (size_t)-1 && length >= m_Min && length <= m_Max);
+                if (length < m_Max)
+                {
+                    std::cout << length << ' ' << std::string((char*)words[h], length);
+                }
                 words.SetLength(h, length);
             }
             
@@ -1047,8 +1052,8 @@ RainbowTable::CrackSimd(
         for (size_t h = 0; h < lanes; h++)
         {
             const uint8_t* hash = &hashes[h * hashWidth];
-            auto length = reducer->Reduce((char*)words[h], m_Max, hash, m_Length - 1);
-            
+            const size_t length = reducer->Reduce((char*)words[h], m_Max, hash, m_Length - 1);
+            assert(length != (size_t)-1 && length >= m_Min && length <= m_Max);
             // Check end, if it matches, we can perform one full chain to see if we find it
             size_t index = FindEndpoint((char*)words[h], length);
             if (index != (size_t)-1)

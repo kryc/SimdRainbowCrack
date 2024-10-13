@@ -66,9 +66,8 @@ WordGenerator::GenerateWord(
     while (i > 0)
     {
         i--;
-        r = i % Charset.length();
+        mpz_fdiv_qr_ui(i.get_mpz_t(), r.get_mpz_t(), i.get_mpz_t(), Charset.length());
         out += Charset[r.get_ui()];
-        i /= Charset.length();
     }
 
     return out;
@@ -96,18 +95,18 @@ WordGenerator::GenerateWord(
 )
 {
     mpz_class i(Value);
-    mpz_class r;
+    mpz_class q,r;
     size_t length;
 
     length = 0;
 
     while (i > 0)
     {
-        r = (i - 1) % Charset.length();
+        i--;
+        mpz_fdiv_qr_ui(i.get_mpz_t(), r.get_mpz_t(), i.get_mpz_t(), Charset.length());
         if (length == DestSize)
             return (size_t)-1;
         Destination[length++] = Charset[r.get_ui()];
-        i = (i - 1) / Charset.length();
     }
 
     return length;

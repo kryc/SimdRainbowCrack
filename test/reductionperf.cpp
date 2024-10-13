@@ -84,7 +84,7 @@ int main(
     );
 
     std::cout << "ModuloReducer" << std::endl;
-    ModuloReducer mr(MIN, MAX, SHA1_SIZE, ASCII);
+    BasicModuloReducer mr(MIN, MAX, SHA1_SIZE, ASCII);
     TestReducer(
         fh,
         &mr

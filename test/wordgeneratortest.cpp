@@ -9,7 +9,7 @@
 #include <iostream>
 #include <string>
 
-#include <gmpxx.h>
+#include "gmpxx.h"
 
 #include "WordGenerator.hpp"
 
@@ -57,5 +57,22 @@ int main(
             std::cerr << "Non-matching words for index " << i << " incorrect" << std::endl;
             return -1;
         }
+    }
+
+    bigint = 1;
+    auto test = WordGenerator::GenerateWord(bigint, ASCII);
+
+    if (test.size() != 1 and test[0] != ASCII[0])
+    {
+        std::cerr << "Invalid word at index 1" << std::endl;
+    }
+
+    bigint++;
+
+    test = WordGenerator::GenerateWord(bigint, ASCII);
+
+    if (test.size() != 1 and test[0] != ASCII[1])
+    {
+        std::cerr << "Invalid word at index 2" << std::endl;
     }
 }
