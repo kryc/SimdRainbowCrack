@@ -29,8 +29,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # set compiler flags
-set(CMAKE_CXX_FLAGS "-Wall -Werror -Wno-deprecated-declarations -Wno-ignored-optimization-argument -Wno-deprecated-declarations")
-set(CMAKE_EXE_LINKER_FLAGS "-lpthread -lgmpxx -lgmp -lcrypto")
+set(CMAKE_CXX_FLAGS "-Wall -Werror -Wno-deprecated-declarations -Wno-ignored-optimization-argument -Wno-deprecated-declarations ${AVXFLAG}")
+set(CMAKE_EXE_LINKER_FLAGS "-lpthread -lgmpxx -lgmp -lcrypto ${AVXFLAG}")
 
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -funroll-loops")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -ggdb -O0 -fno-omit-frame-pointer -fsanitize=address -DDEBUG")
