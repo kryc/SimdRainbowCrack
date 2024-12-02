@@ -117,7 +117,7 @@ RainbowTable::GenerateBlock(
     auto reducer = GetReducer();
     std::vector<SmallString> block(m_Blocksize);
 
-    SimdHashBufferFixed<MAX_OPTIMIZED_BUFFER_SIZE> words;
+    SimdHashBufferFixed<MAX_SIZE> words;
     std::array<uint8_t, MAX_HASH_SIZE * MAX_LANES> hashes;
 
     // Calculate lower bound and add the current index
@@ -497,7 +497,7 @@ RainbowTable::ValidateConfig(
         return false;
     }
 
-    if (m_Algorithm == HashUnknown)
+    if (m_Algorithm == HashAlgorithmUndefined)
     {
         std::cerr << "No algorithm specified" << std::endl;
         return false;
@@ -799,13 +799,13 @@ RainbowTable::DoHash(
 {
     switch (Algorithm)
     {
-    case HashMd5:
+    case HashAlgorithmMD5:
         MD5(Data, Length, Digest);
         break;
-    case HashSha1:
+    case HashAlgorithmSHA1:
         SHA1(Data, Length, Digest);
         break;
-    case HashSha256:
+    case HashAlgorithmSHA256:
         SHA256(Data, Length, Digest);
         break;
     default:
@@ -823,15 +823,15 @@ RainbowTable::DoHashHex(
     uint8_t buffer[MAX_BUFFER_SIZE];
     switch (Algorithm)
     {
-    case HashMd5:
+    case HashAlgorithmMD5:
         MD5(Data, Length, buffer);
         return Util::ToHex(buffer, MD5_SIZE);
         break;
-    case HashSha1:
+    case HashAlgorithmSHA1:
         SHA1(Data, Length, buffer);
         return Util::ToHex(buffer, SHA1_SIZE);
         break;
-    case HashSha256:
+    case HashAlgorithmSHA256:
         SHA256(Data, Length, buffer);
         return Util::ToHex(buffer, SHA256_SIZE);
         break;
@@ -1004,7 +1004,7 @@ RainbowTable::CrackSimd(
     std::vector<std::vector<uint8_t>> hashbytes;
     auto reducer = GetReducer();
     size_t cracked = 0;
-    SimdHashBufferFixed<MAX_OPTIMIZED_BUFFER_SIZE> words;
+    SimdHashBufferFixed<MAX_SIZE> words;
     std::array<uint8_t, MAX_HASH_SIZE * MAX_LANES> hashes;
     const size_t hashWidth = m_HashWidth;
 
@@ -1285,7 +1285,7 @@ RainbowTable::Reset(
 
     m_Path.clear();
     m_PathLoaded = false;
-    m_Algorithm = HashUnknown;
+    m_Algorithm = HashAlgorithmUndefined;
     m_Min = 0;
     m_Max = 0;
     m_Length = 0;
@@ -1311,6 +1311,17 @@ RainbowTable::Reset(
     m_ThreadsCompleted = 0;
 }
 
+#ifdef __APPLE__
+int
+SortCompareEndpoints(
+    void* Arguments,
+    const void* Comp1,
+    const void* Comp2
+)
+{
+    return memcmp((uint8_t*)Comp1 + sizeof(rowindex_t), (uint8_t*)Comp2 + sizeof(rowindex_t), (size_t)Arguments);
+}
+#else
 int
 SortCompareEndpoints(
     const void* Comp1,
@@ -1320,6 +1331,7 @@ SortCompareEndpoints(
 {
     return memcmp((uint8_t*)Comp1 + sizeof(rowindex_t), (uint8_t*)Comp2 + sizeof(rowindex_t), (size_t)Arguments);
 }
+#endif
 
 int
 SortCompareStartpoints(
@@ -1365,7 +1377,11 @@ RainbowTable::SortTable(
     uint8_t* start = m_MappedTable + sizeof(TableHeader);
     if (m_TableType == TypeUncompressed)
     {
+#ifdef __APPLE__
+        qsort_r(start, GetCount(), GetChainWidth(), (void*)m_Max, SortCompareEndpoints);
+#else
         qsort_r(start, GetCount(), GetChainWidth(), SortCompareEndpoints, (void*)m_Max);
+#endif
     }
     else
     {

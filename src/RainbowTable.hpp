@@ -24,6 +24,7 @@
 #include "Common.hpp"
 #include "Reduce.hpp"
 
+#define MAX_SIZE 55
 
 typedef enum _TableType
 {
@@ -125,7 +126,7 @@ private:
     // General purpose
     std::filesystem::path m_Path;
     bool m_PathLoaded = false;
-    HashAlgorithm m_Algorithm = HashUnknown;
+    HashAlgorithm m_Algorithm = HashAlgorithmUndefined;
     size_t m_Min = 0;
     size_t m_Max = 0;
     size_t m_Length = 0;

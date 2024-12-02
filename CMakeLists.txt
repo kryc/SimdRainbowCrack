@@ -8,13 +8,6 @@ if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "")
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "" FORCE)
 endif()
 
-# set compiler flags
-if (NOT AVX OR AVX STREQUAL "" OR AVX STREQUAL "256")
-    set(AVXFLAG "-mavx2" CACHE STRING "" FORCE)
-elseif(AVX STREQUAL "512")
-    set(AVXFLAG "-mavx512bw" CACHE STRING "" FORCE)
-endif()
-
 add_definitions(-DOPTIMIZE)
 add_subdirectory(./SimdHash/)
 remove_definitions(-DOPTIMIZE)
@@ -29,19 +22,18 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # set compiler flags
-set(CMAKE_CXX_FLAGS "-Wall -Werror -Wno-deprecated-declarations -Wno-ignored-optimization-argument -Wno-deprecated-declarations ${AVXFLAG}")
-set(CMAKE_EXE_LINKER_FLAGS "-lpthread -lgmpxx -lgmp -lcrypto ${AVXFLAG}")
+set(CMAKE_CXX_FLAGS "-Wall -Werror -Wno-deprecated-declarations -Wno-ignored-optimization-argument -Wno-deprecated-declarations")
+set(CMAKE_EXE_LINKER_FLAGS "-lpthread -lgmpxx -lgmp -lcrypto")
 
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -funroll-loops")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -ggdb -O0 -fno-omit-frame-pointer -fsanitize=address -DDEBUG")
 
+# Handle MacOS Homebrew
 if(APPLE)
-    set(HOMEBREW_PREFIX "/usr/local" CACHE PATH "Path to Homebrew installation")
-    set(HOMEBREW_INCLUDE ${HOMEBREW_PREFIX}/include)
-    include_directories(/usr/local/include)
-    link_directories(/usr/local/lib)
-else()
-    set(HOMEBREW_INCLUDE "")
+    execute_process(COMMAND brew --prefix OUTPUT_VARIABLE HOMEBREW_PREFIX OUTPUT_STRIP_TRAILING_WHITESPACE)
+    message("Homebrew prefix: ${HOMEBREW_PREFIX}")
+    include_directories(${HOMEBREW_PREFIX}/include)
+    link_directories(${HOMEBREW_PREFIX}/lib)
 endif()
 
 file(GLOB SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
