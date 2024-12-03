@@ -529,8 +529,11 @@ RainbowTable::ValidateConfig(
 
     if (m_Count == 0)
     {
-        std::cerr << "No count specified" << std::endl;
-        return false;
+        std::cerr << "No count specified. Calculating required size" << std::endl;
+        mpz_class keyspace = WordGenerator::WordLengthIndex(m_Max, m_Charset) - WordGenerator::WordLengthIndex(m_Min, m_Charset);
+        keyspace /= m_Length + 1;
+        std::cerr << "Calculated chains required: " << keyspace.get_str() << std::endl;
+        m_Count = keyspace.get_ui();
     }
 
     return true;
