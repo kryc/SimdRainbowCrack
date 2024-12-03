@@ -53,11 +53,12 @@ ComputeChain(
 
     for (size_t i = 0; i < Length; i++)
     {
-        SimdHashContext ctx;
-        SimdSha1Init(&ctx);
-        SimdHashUpdate(&ctx, words.Lengths(), words.ConstBuffers());
-        SimdSha1Finalize(&ctx);
-        SimdHashGetHashes(&ctx, hashes.Buffer());
+        SimdHash(
+            HashAlgorithmSHA1,
+            words.GetLengths(),
+            words.ConstBuffers(),
+            hashes.Buffer()
+        );
 
         for (size_t h = 0; h < SimdLanes(); h++)
         {

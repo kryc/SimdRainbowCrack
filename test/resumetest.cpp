@@ -82,7 +82,7 @@ int main(
         }
 
         // Check the chain
-        auto computed = RainbowTable::ComputeChain(i, 12, 12, 50, HashSha1, ASCII);
+        auto computed = RainbowTable::ComputeChain(i, 12, 12, 50, HashAlgorithmSHA1, ASCII);
         if (chain.Start() != computed.Start())
         {
             std::cerr << "Computed start does not match: " << chain.Start() << " != " << computed.Start() << std::endl;
