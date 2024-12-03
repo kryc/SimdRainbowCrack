@@ -88,7 +88,7 @@ public:
     static const size_t ChainWidthForType(const TableType Type, const size_t Max) { return Type == TypeCompressed ? Max : sizeof(rowindex_t) + Max; };
     const size_t GetChainWidth(void) const { return ChainWidthForType(m_TableType, m_Max); };
     static void DoHash(const uint8_t* Data, const size_t Length, uint8_t* Digest, const HashAlgorithm);
-    static std::string DoHashHex(const uint8_t* Data, const size_t Length, const HashAlgorithm);
+    static const std::string DoHashHex(const uint8_t* Data, const size_t Length, const HashAlgorithm);
     void DoHash(const uint8_t* Data, const size_t Length, uint8_t* Digest) const { DoHash(Data, Length, Digest, m_Algorithm); };
     std::string DoHashHex(const uint8_t* Data, const size_t Length) const { return DoHashHex(Data, Length, m_Algorithm); };
     void Decompress(const std::filesystem::path& Destination) { ChangeType(Destination, TypeUncompressed); };
@@ -98,6 +98,7 @@ public:
     static const Chain ComputeChain(const size_t Index, const size_t Min, const size_t Max, const size_t Length, const HashAlgorithm Algorithm, const std::string& Charset);
     static std::unique_ptr<Reducer> GetReducer(const size_t Min, const size_t Max, const size_t HashWidth, const std::string& Charset);
     inline const uint8_t* GetEndpointAt(const size_t Index) const;
+    inline const uint8_t* GetRecordAt(const size_t Index) const;
 protected:
     void SortStartpoints(void);
     void RemoveStartpoints(void);

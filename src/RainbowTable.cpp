@@ -648,12 +648,20 @@ RainbowTable::MapTable(
 }
 
 const uint8_t*
+RainbowTable::GetRecordAt(
+    const size_t Index
+) const
+{
+    return m_MappedTable + sizeof(TableHeader) + (Index * GetChainWidth());
+}
+
+const uint8_t*
 RainbowTable::GetEndpointAt(
     const size_t Index
 ) const
 {
     // Get the pointer to the chain
-    const uint8_t* entry = m_MappedTable + sizeof(TableHeader) + (Index * GetChainWidth());
+    const uint8_t* const entry = GetRecordAt(Index);
     // Return the pointer to the endpoint
     return m_TableType == TypeUncompressed ? entry + sizeof(rowindex_t) : entry;
 }
@@ -671,111 +679,127 @@ RainbowTable::IndexTable(
     // Zero the pointers
     memset(m_MappedTableLookup, 0, sizeof(m_MappedTableLookup));
 
+# if 1
     const size_t chainWidth = GetChainWidth();
-    const uint8_t* base = GetEndpointAt(0);
-    const uint8_t* endpoint = base;
-    
+    const uint8_t* const base = GetEndpointAt(0);
+
     // Save the first endpoint
-    uint16_t last = *(uint16_t*)endpoint;
-    m_MappedTableLookup[last] = endpoint;
-    // size_t count = 0;
+    const uint16_t first = *(uint16_t*) base;
+    m_MappedTableLookup[first] = GetRecordAt(0);
 
     constexpr size_t READAHEAD = 64;
 
     // First pass
     for (size_t i = 0; i < GetCount(); i+= READAHEAD)
     {
-        const uint16_t index = *(uint16_t*)endpoint;
-        if (index != last)
+        const uint8_t* const next = GetEndpointAt(i);
+        const uint16_t index = *(uint16_t*)next;
+        if (m_MappedTableLookup[index] == nullptr ||
+            m_MappedTableLookup[index] > next)
         {
-            m_MappedTableLookup[index] = endpoint;
+            m_MappedTableLookup[index] = GetRecordAt(i);
         }
-        last = index;
-        endpoint += (chainWidth * READAHEAD);
     }
 
-    // Loop over each known endpoint
+    // Second pass -> N'th pass
+    // Loop over each known endpoint and check the previous entry
+    bool foundNewEntry;
+    do
+    {
+        foundNewEntry = false;
+        for (size_t i = 0; i < LOOKUP_SIZE; i++)
+        {
+            const uint8_t* offset = m_MappedTableLookup[i] + sizeof(rowindex_t);
+            if (offset == nullptr)
+            {
+                continue;
+            }
+
+            // Walk backwards until we find the previous
+            while (offset >= base)
+            {
+                const uint16_t next = *(uint16_t*)offset;
+                if (next == i)
+                {
+                    m_MappedTableLookup[i] = offset - sizeof(rowindex_t);
+                }
+                else
+                {
+                    if (m_MappedTableLookup[next] == nullptr)
+                    {
+                        m_MappedTableLookup[next] = offset - sizeof(rowindex_t);
+                        foundNewEntry = true;
+                    }
+                    break;
+                }
+                offset -= chainWidth;
+            }
+        }
+    } while(foundNewEntry);
+
+    // Calculate the counts
+    // We walk through each item, look for the next offset
+    // and calculate the distance between them
     for (size_t i = 0; i < LOOKUP_SIZE; i++)
     {
-        const uint8_t* offset = m_MappedTableLookup[i];
+        // Find the next closest offset
+        const uint8_t* const offset = m_MappedTableLookup[i];
         if (offset == nullptr)
         {
             continue;
         }
 
-        // Check if it is the base
-        if (offset == base)
+        const uint8_t* next = nullptr;
+        for (size_t j = 0; j < LOOKUP_SIZE; j++)
         {
-            continue;
+            if (i != j
+                && m_MappedTableLookup[j] != nullptr
+                && m_MappedTableLookup[j] > m_MappedTableLookup[i]
+                && (next == nullptr || m_MappedTableLookup[j] < next))
+            {
+                next = m_MappedTableLookup[j];
+            }
         }
 
-        // Walk backwards until we find the previous
-        const uint16_t index = *(uint16_t*)offset;
-        for (;;)
+        assert(next == nullptr || next > offset); 
+        assert(next == nullptr || (uint64_t)(next - offset) % chainWidth == 0);
+        
+        if(next != nullptr)
         {
-            offset -= chainWidth;
-            const uint16_t next = *(uint16_t*)offset;
-            if (next != index)
-            {
-                break;
-            }
-            m_MappedTableLookup[i] -= chainWidth;
+            m_MappedTableLookupSize[i] = (next - m_MappedTableLookup[i]);
         }
     }
 
-    // Calculate the counts
-    // We walk through each item, look for the next offset
-    // and calculate the distance between them
-    const uint8_t* max = 0;
-    uint16_t maxIndex = 0;
+    // Handle the last entry
+    const uint8_t* max = nullptr;
+    size_t maxIndex = 0;
     for (size_t i = 0; i < LOOKUP_SIZE; i++)
     {
-        const uint8_t* offset = m_MappedTableLookup[i];
-        // Find the next closest offset
-        const uint8_t* next = (const uint8_t*)-1;
-        for (size_t j = 0; j < LOOKUP_SIZE; j++)
+        if (m_MappedTableLookup[i] != nullptr
+            && m_MappedTableLookup[i] > max)
         {
-            if (j == i)
-            {
-                continue;
-            }
-
-            const uint8_t* test = m_MappedTableLookup[j];
-            if (test > offset && test < next)
-            {
-                next = test;
-            }
-        }
-        // Calculate the distance
-        assert(next > offset);
-        
-        if(next != (const uint8_t*)-1)
-        {
-            m_MappedTableLookupSize[i] = (next - offset) / GetMax();
-
-            // Update the max so we can calculate the last entry
-            if (offset > max)
-            {
-                max = offset;
-                maxIndex = i;
-            }
+            max = m_MappedTableLookup[i];
+            maxIndex = i;
         }
     }
 
     // Calculate final size
-    const uint8_t* end = m_MappedTable + m_MappedFileSize - GetMax(); //GetEndpointAt(GetCount() - 1);
-    m_MappedTableLookupSize[maxIndex] = (end - max) / GetMax();
+    const uint8_t * const end = m_MappedTable + m_MappedTableSize;
+    m_MappedTableLookupSize[maxIndex] = (end - max);
 
     // Linear version
-#if 0
-    for (size_t i = 0; i < GetCount(); i++)
+#else
+    uint16_t last = *(uint16_t*)GetEndpointAt(0);
+    m_MappedTableLookup[last] = GetRecordAt(0);
+    size_t count = 1;
+    for (size_t i = 1; i < GetCount(); i++)
     {
-        const uint16_t index = *(uint16_t*)endpoint;
+        const uint16_t index = *(uint16_t*)GetEndpointAt(i);
         // New id, we need to walk back
         if (index != last)
         {
-            m_MappedTableLookupSize[last] = count;
-            m_MappedTableLookup[index] = endpoint;
+            m_MappedTableLookupSize[last] = count * GetChainWidth();
+            m_MappedTableLookup[index] = GetRecordAt(i);
             count = 1;
         }
         else
@@ -783,9 +807,8 @@ RainbowTable::IndexTable(
             count++;
         }
         last = index;
-        endpoint += chainWidth;
     }
-    m_MappedTableLookupSize[last] = count;
+    m_MappedTableLookupSize[last] = count * GetChainWidth();
 #endif
 }
 
@@ -813,7 +836,8 @@ RainbowTable::DoHash(
     }
 }
 
-/* static */ std::string
+/* static */
+const std::string
 RainbowTable::DoHashHex(
     const uint8_t* Data,
     const size_t Length,
@@ -821,24 +845,7 @@ RainbowTable::DoHashHex(
 )
 {
     uint8_t buffer[MAX_BUFFER_SIZE];
-    switch (Algorithm)
-    {
-    case HashAlgorithmMD5:
-        MD5(Data, Length, buffer);
-        return Util::ToHex(buffer, MD5_SIZE);
-        break;
-    case HashAlgorithmSHA1:
-        SHA1(Data, Length, buffer);
-        return Util::ToHex(buffer, SHA1_SIZE);
-        break;
-    case HashAlgorithmSHA256:
-        SHA256(Data, Length, buffer);
-        return Util::ToHex(buffer, SHA256_SIZE);
-        break;
-    default:
-        return std::string();
-        break;
-    }
+    return Util::ToHex(buffer, GetHashWidth(Algorithm));
 }
 
 const size_t
@@ -847,20 +854,21 @@ RainbowTable::FindEndpoint(
     const size_t Length
 ) const
 {
-    std::vector<char> comparitor;
-    comparitor.resize(m_Max);
+    // We need a null-padded buffer to compare against
+    std::vector<char> comparitor(m_Max);
     memcpy(&comparitor[0], Endpoint, Length);
-    size_t skiplen = GetChainWidth();
+
+    const size_t chainWidth = GetChainWidth();
     // Uncompressed tables are just flat files
     // of endpoints, each of m_Max width. They are
     // unsorted so we need to do a Linear search
     if (m_TableType == TypeCompressed)
     {
-        uint8_t* endpoint = m_MappedTable + sizeof(TableHeader);
+        const uint8_t* endpoint = m_MappedTable + sizeof(TableHeader);
         for (
             size_t c = 0;
             c < m_Chains;
-            c++, endpoint += skiplen)
+            c++, endpoint += chainWidth)
         {
             if (memcmp(endpoint, &comparitor[0], m_Max) == 0)
             {
@@ -876,25 +884,28 @@ RainbowTable::FindEndpoint(
     {
         // Lookup this endpoint offset and length
         uint16_t index = *(uint16_t*)Endpoint;
-        const uint8_t* tableStart = m_MappedTableLookup[index];
-        const size_t tablelength = m_MappedTableLookupSize[index];
+        const uint8_t* const base = m_MappedTableLookup[index];
+        const uint8_t* const top = (uint8_t*) base + m_MappedTableLookupSize[index];
+        // const uint8_t* const base = m_MappedTable + sizeof(TableHeader);
+        // const uint8_t* const top = (uint8_t*) base + m_MappedTableSize - sizeof(TableHeader);
 
         // Endpoint not found in lookup table
-        if (tableStart == 0)
+        if (base == nullptr)
         {
             return (size_t)-1;
         }
 
         // Perform the search
-        size_t low = 0;
-        size_t high = tablelength - 1;
-        // uint8_t* startendpoint = m_MappedTable + sizeof(TableHeader) + sizeof(rowindex_t);
+        const uint8_t* low = (uint8_t*) base;
+        const uint8_t* high = (uint8_t*) top - chainWidth;
+        const uint8_t* mid;
+
         while (low <= high)
         {
-            size_t mid = (low + high) / 2;
-            if (mid > tablelength)
-                break;
-            const uint8_t* endpoint = tableStart + (skiplen * mid);
+            // Calculate the midpoint record offset
+            mid = low + ((high - low) / (2 * chainWidth)) * chainWidth;
+            // The endpoint for the mid point
+            const uint8_t* const endpoint = mid + sizeof(rowindex_t);
             int cmp = memcmp(endpoint, &comparitor[0], m_Max);
             if (cmp == 0)
             {
@@ -903,11 +914,11 @@ RainbowTable::FindEndpoint(
             }
             else if (cmp < 0)
             {
-                low = mid + 1;
+                low = mid + chainWidth;
             }
             else
             {
-                high = mid - 1;
+                high = mid - chainWidth;
             }
         }
     }
@@ -994,7 +1005,6 @@ RainbowTable::ResultFound(
     std::cout << Hash << " " << Result << std::endl;
 }
 
-//std::vector<std::tuple<std::string, std::string>>
 void
 RainbowTable::CrackSimd(
     std::vector<std::string> Hashes
@@ -1041,11 +1051,12 @@ RainbowTable::CrackSimd(
             }
             
             // Perform hash
-            SimdHashContext ctx;
-            SimdHashInit(&ctx, m_Algorithm);
-            SimdHashUpdate(&ctx, words.GetLengths(), words.ConstBuffers());
-            SimdHashFinalize(&ctx);
-            SimdHashGetHashes(&ctx, &hashes[0]);
+            SimdHash(
+                m_Algorithm,
+                words.GetLengths(),
+                words.ConstBuffers(),
+                &hashes[0]
+            );
         }
 
         // Perform the final reductions and check
