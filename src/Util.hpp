@@ -1,9 +1,9 @@
 //
 //  Util.hpp
-//  SimdCrack
+//  CrackList
 //
-//  Created by Kryc on 14/09/2020.
-//  Copyright © 2020 Kryc. All rights reserved.
+//  Created by Kryc on 11/08/2024.
+//  Copyright © 2024 Kryc. All rights reserved.
 //
 
 #ifndef Util_hpp
@@ -18,7 +18,7 @@ namespace Util
 
 std::vector<uint8_t>
 ParseHex(
-    std::string& HexString
+    const std::string& HexString
 );
 
 std::string
@@ -32,6 +32,10 @@ IsHex(
     const std::string& String
 );
 
+std::string
+ToLower(
+    const std::string& String
+);
 
 }
 

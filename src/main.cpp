@@ -139,7 +139,7 @@ main(
         }
     }
 
-    if (action == "build")
+    if (action == "build" || action == "resume")
     {
         if (!rainbow.ValidateConfig())
         {
@@ -191,6 +191,12 @@ main(
 
         if (action == "decompress")
         {
+            if (destination.empty())
+            {
+                auto tablepath = rainbow.GetPath();
+                auto extension = tablepath.extension();
+                destination = tablepath.replace_extension(".utbl");
+            }
             rainbow.Decompress(destination);
         }
         else

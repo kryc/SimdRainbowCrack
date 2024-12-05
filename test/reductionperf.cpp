@@ -69,6 +69,7 @@ int main(
 )
 {
     // Open a handle to /dev/urandom
+    // Use urandom as it will never block
     FILE* fh = fopen("/dev/urandom", "r");
     if (fh == nullptr)
     {
@@ -95,6 +96,13 @@ int main(
     TestReducer(
         fh,
         &bwr
+    );
+
+    std::cout << "HybridReducer" << std::endl;
+    HybridReducer hr(MIN, MAX, SHA1_SIZE, ASCII);
+    TestReducer(
+        fh,
+        &hr
     );
 
     fclose(fh);

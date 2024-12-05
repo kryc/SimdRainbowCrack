@@ -17,9 +17,11 @@
 #include <math.h>
 #include <string>
 
+#include "Common.hpp"
 #include "WordGenerator.hpp"
 
-static inline uint32_t rotl(
+static inline uint32_t
+rotl(
     const uint32_t Value,
     const uint8_t Distance
 )
@@ -27,12 +29,66 @@ static inline uint32_t rotl(
     return (Value << Distance) | (Value >> (32 - Distance));
 }
 
-static inline uint32_t rotr(
+static inline uint32_t
+rotr(
     const uint32_t Value,
     const uint8_t Distance
 )
 {
     return (Value >> Distance) | (Value << (32 - Distance));
+}
+
+static inline void
+calculate_bytes_required(
+    const mpz_class Value,
+    size_t* BytesRequired,
+    uint8_t* MSBMask
+)
+{
+    // Figure out the smallest number of bits of
+    // input hash data required to represent _Value_
+    size_t bitsRequired = 0;
+    mpz_class mask = 0;
+    size_t bitsoverflow;
+
+    while (mask < Value)
+    {
+        mask <<= 1;
+        mask |= 0x1;
+        bitsRequired++;
+    }
+    // Calculate the number of whole bytes required
+    *BytesRequired = bitsRequired / 8;
+    // The number of bits to mask off the most
+    // significant byte
+    bitsoverflow = bitsRequired % 8;
+    // If we overflow an 8-bit boundary then we
+    // need to use an extra byte
+    if (bitsoverflow != 0)
+    {
+        (*BytesRequired)++;
+        // We need to mask off the top additional
+        // bits though
+        size_t bitstomask = 8 - bitsoverflow;
+        *MSBMask = 0xff >> bitstomask;
+    }
+    else
+    {
+        *MSBMask = 0xff;
+    }
+}
+
+// Doing a simple modulo on each byte will introduce
+// a modulo bias. We need to calculate the maximum
+// value that a multiple of the number of characters
+// will fit into a single uint8_t
+static inline uint8_t
+calculate_modulo_bias_mask(
+    const size_t CharsetSize
+)
+{
+    size_t maxval = CharsetSize - 1;
+    return floor(pow(2, 8) / (maxval + 1)) * (maxval + 1);
 }
 
 class Reducer
@@ -47,7 +103,10 @@ public:
         m_Max(Max),
         m_HashLength(HashLength),
         m_HashLengthWords(HashLength/sizeof(uint32_t)),
-        m_Charset(Charset) {};
+        m_Charset(Charset),
+        m_MinIndex(WordGenerator::WordLengthIndex(Min, Charset)),
+        m_MaxIndex(WordGenerator::WordLengthIndex(Max + 1, Charset))
+        { };
     virtual size_t Reduce(
         char* Destination,
         const size_t DestLength,
@@ -55,12 +114,18 @@ public:
         const size_t Iteration
     ) = 0;
     virtual ~Reducer() {};
+    const size_t GetMin(void) const { return m_Min; }
+    const size_t GetMax(void) const { return m_Max; }
+    const size_t GetHashLength(void) const { return m_HashLength; }
+    const std::string& GetCharset(void) const  { return m_Charset; }
+    const mpz_class GetMinIndex(void) const { return m_MinIndex; }
+    const mpz_class GetMaxIndex(void) const { return m_MaxIndex; }
+    const mpz_class GetKeyspace(void) const { return m_MaxIndex - m_MinIndex; }
 protected:
-    // A basic entropy extension function
+    // A basic entropy extension function based on SHA256 extension
     // It replaces the data in a destination buffer
-    // Based on SHA256 extension function
     void ExtendEntropy(
-        uint32_t* Buffer,
+        uint32_t* const Buffer,
         const size_t LengthWords
     )
     {
@@ -86,6 +151,8 @@ protected:
     const size_t m_HashLength;
     const size_t m_HashLengthWords;
     const std::string m_Charset;
+    const mpz_class m_MinIndex;
+    const mpz_class m_MaxIndex;
 };
 
 class BasicModuloReducer : public Reducer
@@ -96,12 +163,7 @@ public:
         const size_t Max,
         const size_t HashLength,
         const std::string& Charset
-    ) : Reducer(Min, Max, HashLength, Charset)
-    {
-        m_MinIndex = WordGenerator::WordLengthIndex(Min, Charset);
-        m_MaxIndex = WordGenerator::WordLengthIndex(Max + 1, Charset);
-        m_IndexRange = m_MaxIndex - m_MinIndex;
-    };
+    ) : Reducer(Min, Max, HashLength, Charset) {}
 
     size_t Reduce(
         char* Destination,
@@ -133,7 +195,7 @@ protected:
         // XOR the current rainbow collumn number
         Value ^= Iteration;
         // Constrain it within the index range
-        Value %= m_IndexRange;
+        Value %= GetKeyspace();
         // Add the minimum index to ensure it is >min and <max
         Value += m_MinIndex;
         // Generate and return the word for the index
@@ -144,10 +206,6 @@ protected:
             m_Charset
         );
     }
-
-    mpz_class m_MinIndex;
-    mpz_class m_MaxIndex;
-    mpz_class m_IndexRange;
 };
 
 class ModuloReducer final : public BasicModuloReducer
@@ -163,30 +221,12 @@ public:
         // Figure out the smallest number of bits of
         // input hash data required to generate a
         // word in the password space
-        m_BitsRequired = 0;
-        mpz_class mask = 0;
-        while (mask < m_IndexRange)
-        {
-            mask <<= 1;
-            mask |= 0x1;
-            m_BitsRequired++;
-        }
-        // Calculate the number of whole bytes required
-        m_BytesRequired = m_BitsRequired / 8;
-        // The number of bits to mask off the most significant
-        // byte to constrain the value
-        size_t bitsoverflow = m_BitsRequired % 8;
-        // If we overflow an 8-bit boundary then we
-        // need to use an extra byte
-        if (bitsoverflow != 0)
-        {
-            m_BytesRequired++;
-        }
-        // We need to mask off the top additional
-        // bits though
-        size_t bitstomask = 8 - bitsoverflow;
-        m_MsbMask = 0xff >> bitstomask;
-        // std::cerr << m_BitsRequired << ' ' << m_BytesRequired << ' ' << bitsoverflow << ' ' << std::hex << (int)m_MsbMask << std::endl;
+        calculate_bytes_required(
+            GetKeyspace(),
+            &m_BytesRequired,
+            &m_MsbMask
+        );
+
         assert(m_BytesRequired * sizeof(uint8_t) <= m_HashLength);
     };
 
@@ -202,9 +242,9 @@ public:
         // Repeatedly try to load the hash integer until it is in range
         // we do this to avoid a modulo bias favouring reduction at the bottom
         // end of the password space
-        mpz_class reduction = m_IndexRange + 1;
+        mpz_class reduction = GetKeyspace() + 1;
         size_t offset = 0;
-        while (reduction > m_IndexRange)
+        while (reduction > GetKeyspace())
         {
             if (offset + m_BytesRequired == m_HashLength)
             {
@@ -212,12 +252,12 @@ public:
                 offset = 0;
             }
             // Mask off the most significant bit
-            uint8_t savedWord = hashBuffer[0];
-            hashBuffer[offset] = savedWord & m_MsbMask;
+            uint8_t mostSigByte = hashBuffer[offset];
+            hashBuffer[offset] = mostSigByte & m_MsbMask;
             // Parse the hash as a single bigint
             mpz_import(reduction.get_mpz_t(), m_BytesRequired, 1, sizeof(uint8_t), 0, 0, &hashBuffer[offset]);
             // Replace the original entropy in case we need to extend
-            hashBuffer[offset] = savedWord;
+            hashBuffer[offset] = mostSigByte;
             // Move the offset along
             offset++;
         }
@@ -229,10 +269,131 @@ public:
             Iteration
         );
     }
-private:
-    size_t m_BitsRequired;
+protected:
     size_t m_BytesRequired;
-    uint32_t m_MsbMask;
+    uint8_t m_MsbMask;
+};
+
+class HybridReducer final : public Reducer
+{
+public:
+    HybridReducer(
+        const size_t Min,
+        const size_t Max,
+        const size_t HashLength,
+        const std::string& Charset
+    ) : Reducer(Min, Max, HashLength, Charset)
+    {
+        mpz_class total = 0;
+        for (size_t i = Min; i <= Max; i++)
+        {
+            const mpz_class lower = WordGenerator::WordLengthIndex(i, Charset);
+            const mpz_class upper = WordGenerator::WordLengthIndex(i + 1, Charset);
+            const mpz_class keyspace = upper - lower;
+            total += keyspace;
+            m_Limits[i] = total;
+        }
+
+        // We need to calculate the number of bytes required
+        // to represent the largest range of the keyspace
+        calculate_bytes_required(
+            total,
+            &m_BytesRequired,
+            &m_MsbMask
+        );
+
+        m_ModMax = calculate_modulo_bias_mask(m_Charset.size());
+    }
+
+    size_t Reduce(
+        char* Destination,
+        const size_t DestLength,
+        const uint8_t* Hash,
+        const size_t Iteration
+    ) override
+    {
+        uint8_t buffer[m_HashLength];
+        uint32_t * const buffer32 = (uint32_t*) buffer;
+        const uint32_t * const hash32 = (uint32_t*) Hash;
+        size_t length, offset;
+        // Copy and mix in the iteration
+        for (size_t i = 0; i < m_HashLengthWords; i++)
+        {
+            buffer32[i] = hash32[i] ^ rotl(0x5a827999 * Iteration, i);
+        }
+
+        // Initialize the buffer read offset
+        offset = 0;
+        
+        // If we are using variable lengths we use a bigint
+        // within the keyspace range to get the length
+        if (m_Min != m_Max)
+        {
+            // Repeatedly try to load the hash integer until it is in range
+            // we do this to avoid a modulo bias favouring reduction at the bottom
+            // end of the password space
+            mpz_class reduction = m_Limits[m_Max] + 1;
+            while (reduction >= m_Limits[m_Max])
+            {
+                if (offset + m_BytesRequired == m_HashLength)
+                {
+                    ExtendEntropy((uint32_t*)buffer, m_HashLengthWords);
+                    offset = 0;
+                }
+                // Mask off the most significant bit
+                const uint8_t mostSigByte = buffer[offset];
+                buffer[offset] = mostSigByte & m_MsbMask;
+                // Parse the hash as a single bigint
+                mpz_import(reduction.get_mpz_t(), m_BytesRequired, 1, sizeof(uint8_t), 0, 0, &buffer[offset]);
+                // Replace the original entropy in case we need to extend
+                buffer[offset] = mostSigByte;
+                // Move the offset along
+                offset++;
+            }
+
+            length = 0;
+            for (size_t i = m_Min; i <= m_Max && length == 0; i++)
+            {
+                if (reduction < m_Limits[i])
+                {
+                    length = i;
+                }
+            }
+        }
+        else
+        {
+            length = m_Max;
+        }
+
+        // Now read bytes from the remaining input buffer
+        size_t bytesWritten = 0;
+        const size_t charsetSize = m_Charset.size();
+        // Update the used bytes to account for entropy used in length calculation
+        offset += m_BytesRequired - 1;
+        // Or... just reset it to zero to minimize entropy extension.. Is reusing
+        // the entropy used in the length calculation a bad thing...?
+        // offset = 0;
+        while (bytesWritten < length)
+        {
+            if (offset >= m_HashLength)
+            {
+                ExtendEntropy((uint32_t*)buffer, m_HashLengthWords);
+                offset = 0;
+            }
+
+            uint8_t next = buffer[offset++];
+            if (next < m_ModMax)
+            {
+                Destination[bytesWritten++] = m_Charset[next % charsetSize];
+            }
+        }
+        return bytesWritten;
+    }
+private:
+    size_t m_BytesRequired;
+    uint8_t m_MsbMask;
+    std::array<mpz_class, MAX_LENGTH> m_Limits{};
+    size_t m_ModMax;
 };
 
 class BytewiseReducer final : public Reducer
@@ -246,12 +407,7 @@ public:
     ) : Reducer(Min, Max, HashLength, Charset)
     {
         assert(Min == Max);
-        // Doing a simple modulo on each byte will introduce
-        // a modulo bias. We need to calculate the maximum
-        // value that a multiple of the number of characters
-        // will fit into a single uint8_t. We call this modmax.
-        size_t maxval = m_Charset.size() - 1;
-        m_ModMax = floor(pow(2, 8) / (maxval + 1)) * (maxval + 1);
+        m_ModMax = calculate_modulo_bias_mask(m_Charset.size());
     }
     
     size_t Reduce(
@@ -267,10 +423,10 @@ public:
         memcpy(buffer, Hash, HashLength);
         // Loop and get all characters
         size_t bufferOffset = 0;
-        size_t count = 0;
+        size_t bytesWritten = 0;
         size_t charsetSize = m_Charset.size();
         
-        while (count < m_Max /* m_Min == m_Max */)
+        while (bytesWritten < m_Max /* m_Min == m_Max */)
         {
             if (bufferOffset == HashLength)
             {
@@ -281,10 +437,10 @@ public:
             uint8_t next = buffer[bufferOffset++];
             if (next < m_ModMax)
             {
-                Destination[count++] = m_Charset[next % charsetSize];
+                Destination[bytesWritten++] = m_Charset[next % charsetSize];
             }
         }
-        return count;
+        return bytesWritten;
     };
 private:
     size_t m_ModMax;

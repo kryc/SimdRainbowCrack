@@ -1,9 +1,9 @@
 //
 //  Util.cpp
-//  SimdCrack
+//  CrackList
 //
-//  Created by Kryc on 14/09/2020.
-//  Copyright © 2020 Kryc. All rights reserved.
+//  Created by Kryc on 11/08/2024.
+//  Copyright © 2024 Kryc. All rights reserved.
 //
 
 #include <vector>
@@ -16,7 +16,7 @@ namespace Util
 
 std::vector<uint8_t>
 ParseHex(
-	std::string& HexString
+	const std::string& HexString
 )
 {
 	std::vector<uint8_t> vec;
@@ -68,7 +68,7 @@ ToHex(
 
 	for (size_t i = 0; i < Length; i++)
 	{
-		snprintf(buffer, 3, "%02X", Bytes[i]);
+		snprintf(buffer, 3, "%02x", Bytes[i]);
 		ret.push_back(buffer[0]);
 		ret.push_back(buffer[1]);
 	}
@@ -96,6 +96,28 @@ IsHex(
 	}
 	
 	return true;
+}
+
+std::string
+ToLower(
+    const std::string& String
+)
+{
+	std::string result;
+
+	for (char c : String)
+	{
+		if (c >= 'A' && c <= 'Z')
+		{
+			result.push_back(c + ('a' - 'A'));
+		}
+		else
+		{
+			result.push_back(c);
+		}
+	}
+
+	return result;
 }
 
 }

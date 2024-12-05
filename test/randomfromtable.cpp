@@ -6,6 +6,7 @@
 #include "simdhash.h"
 
 #include "RainbowTable.hpp"
+#include "Util.hpp"
 #include "WordGenerator.hpp"
 
 std::tuple<std::string, std::string>
@@ -15,12 +16,9 @@ GetAtOffset(
     const size_t Offset
 )
 {
-    // std::cout << "Using offset " << Offset << " in chain " << Chain << std::endl;
-
     mpz_class counter = WordGenerator::WordLengthIndex(Table.GetMin(), Table.GetCharset());
     counter += Chain;
     auto start = WordGenerator::GenerateWord(counter, Table.GetCharset());
-    // std::cout << "Start: '" << start << "'" << std::endl;
 
     FILE* fh = fopen(Table.GetPath().c_str(), "r");
     if (fh == nullptr)
@@ -33,13 +31,12 @@ GetAtOffset(
     end.resize(Table.GetMax());
     fread(&end[0], sizeof(char), Table.GetMax(), fh);
     fclose(fh);
-    // std::cout << "End: '" << end << "'" << std::endl;
 
     size_t hashsize = GetHashWidth(Table.GetAlgorithm());
     std::vector<uint8_t> hash(hashsize);
     std::vector<char> reduced(Table.GetMax());
     
-    auto reducer = RainbowTable::GetReducer(Table.GetMin(), Table.GetMax(), hashsize, Table.GetCharset());
+    HybridReducer reducer(Table.GetMin(), Table.GetMax(), hashsize, Table.GetCharset());
 
     size_t length = start.size();
     memcpy(&reduced[0], start.c_str(), length);
@@ -47,20 +44,12 @@ GetAtOffset(
     for (size_t i = 0; i < Table.GetLength(); i++)
     {
         RainbowTable::DoHash((uint8_t*)&reduced[0], length, &hash[0], Table.GetAlgorithm());
-        length = reducer->Reduce(&reduced[0], Table.GetMax(), &hash[0], i);
+        length = reducer.Reduce(&reduced[0], Table.GetMax(), &hash[0], i);
         if (i == Offset)
         {
             std::string output(&reduced[0], &reduced[length]);
             RainbowTable::DoHash((const uint8_t*)&reduced[0], length, &hash[0], Table.GetAlgorithm());
-            
-            std::string hashString;
-            for (size_t h = 0; h < hashsize; h++)
-            {
-                char buff[3];
-                snprintf(buff, sizeof(buff), "%02X", hash[h]);
-                buff[2] = '\0';
-                hashString += buff;
-            }
+            std::string hashString = Util::ToHex(&hash[0], hashsize);
             return {output, hashString};
         }
     }
@@ -128,6 +117,6 @@ main(
         size_t offset = rand() % rainbow.GetLength();
         auto result = GetAtOffset(rainbow, chain, offset);
         
-        std::cout << std::get<1>(result) << " " << std::get<0>(result) << std::endl;
+        std::cout << std::get<1>(result) << rainbow.GetSeparator() << std::get<0>(result) << std::endl;
     }
 }

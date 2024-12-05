@@ -1,6 +1,6 @@
 //
 //  RainbowTable.cpp
-//  RainbowCrack-
+//  SimdRainbowCrack
 //
 //  Created by Kryc on 15/02/2024.
 //  Copyright © 2024 Kryc. All rights reserved.
@@ -42,6 +42,15 @@ RainbowTable::InitAndRunBuild(
     {
         std::cerr << "Configuration error" << std::endl;
         return;
+    }
+
+    // Calculate the count if needed
+    if (m_Count == 0)
+    {
+        mpz_class keyspace = WordGenerator::WordLengthIndex(m_Max + 1, m_Charset) - WordGenerator::WordLengthIndex(m_Min, m_Charset);
+        keyspace /= m_Length + 1;
+        std::cerr << "Calculated chains required: " << keyspace.get_str() << std::endl;
+        m_Count = keyspace.get_ui();
     }
 
     // Write the table header if we didn't load from disk
@@ -89,7 +98,6 @@ RainbowTable::InitAndRunBuild(
             )
         );
     }
-    
 }
 
 void
@@ -114,55 +122,54 @@ RainbowTable::GenerateBlock(
         return;
     }
 
-    auto reducer = GetReducer();
+    HybridReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
     std::vector<SmallString> block(m_Blocksize);
 
-    SimdHashBufferFixed<MAX_SIZE> words;
+    SimdHashBufferFixed<MAX_LENGTH> words;
     std::array<uint8_t, MAX_HASH_SIZE * MAX_LANES> hashes;
 
     // Calculate lower bound and add the current index
     mpz_class counter = CalculateLowerBound() + blockStartId;
     const size_t hashWidth = m_HashWidth;
-    
+    const size_t lanes = SimdLanes();
+
     // Start measuring the block generation time
     const auto start = std::chrono::system_clock::now();
 
-    const size_t iterations = m_Blocksize / SimdLanes();
+    const size_t iterations = m_Blocksize / lanes;
     for (size_t iteration = 0; iteration < iterations; iteration++)
     {
         // Set the chain start point
-        for (size_t i = 0; i < SimdLanes(); i++)
+        for (size_t i = 0; i < lanes; i++)
         {
-            const auto length = WordGenerator::GenerateWord((char*)words[i], m_Max, counter, m_Charset);
-            assert(length != -1);
+            const size_t length = WordGenerator::GenerateWord((char*)words[i], m_Max, counter++, m_Charset);
             words.SetLength(i, length);
-            counter++;
         }
 
         // Perform the hash/reduce cycle
         for (size_t i = 0; i < m_Length; i++)
         {
             // Perform hash
-            SimdHashContext ctx;
-            SimdHashInit(&ctx, m_Algorithm);
-            SimdHashUpdate(&ctx, words.GetLengths(), words.ConstBuffers());
-            SimdHashFinalize(&ctx);
-            SimdHashGetHashes(&ctx, &hashes[0]);
+            SimdHash(
+                m_Algorithm,
+                words.GetLengths(),
+                words.ConstBuffers(),
+                &hashes[0]
+            );
 
             // Perform reduce
-            for (size_t h = 0; h < SimdLanes(); h++)
+            for (size_t h = 0; h < lanes; h++)
             {
                 const uint8_t* hash = &hashes[h * hashWidth];
-                const auto length = reducer->Reduce((char*)words[h], m_Max, hash, i);
+                const size_t length = reducer.Reduce((char*)words[h], m_Max, hash, i);
                 words.SetLength(h, length);
             }
         }
 
         // Save the chain information
-        
-        for (size_t h = 0; h < SimdLanes(); h++)
+        for (size_t h = 0; h < lanes; h++)
         {
-            block[iteration * SimdLanes() + h].Set(words[h], words.GetLength(h));
+            block[iteration * lanes + h].Set(words[h], words.GetLength(h));
         }
     }
 
@@ -395,7 +402,7 @@ RainbowTable::GetTableHeader(
     {
         return false;
     }
-    
+
     std::ifstream fs(Path, std::ios::binary);
     if (!fs.is_open())
     {
@@ -463,7 +470,9 @@ RainbowTable::LoadTable(
 }
 
 const size_t
-RainbowTable::GetCount(void) const
+RainbowTable::GetCount(
+    void
+) const
 {
     return (std::filesystem::file_size(m_Path) - sizeof(TableHeader)) / GetChainWidth();
 }
@@ -488,6 +497,24 @@ RainbowTable::ValidateConfig(
     if (m_Max == 0)
     {
         std::cerr << "No max length specified" << std::endl;
+        return false;
+    }
+
+    if (m_Min == 0)
+    {
+        std::cerr << "No min length specified" << std::endl;
+        return false;
+    }
+
+    if (m_Max > MAX_LENGTH)
+    {
+        std::cerr << "Max length is above supported maximum" << std::endl;
+        return false;
+    }
+
+    if (m_Min > MAX_LENGTH)
+    {
+        std::cerr << "Min length is above supported maximum" << std::endl;
         return false;
     }
 
@@ -525,15 +552,6 @@ RainbowTable::ValidateConfig(
     {
         std::cerr << "No or invalid charset specified" << std::endl;
         return false;
-    }
-
-    if (m_Count == 0)
-    {
-        std::cerr << "No count specified. Calculating required size" << std::endl;
-        mpz_class keyspace = WordGenerator::WordLengthIndex(m_Max, m_Charset) - WordGenerator::WordLengthIndex(m_Min, m_Charset);
-        keyspace /= m_Length + 1;
-        std::cerr << "Calculated chains required: " << keyspace.get_str() << std::endl;
-        m_Count = keyspace.get_ui();
     }
 
     return true;
@@ -634,7 +652,7 @@ RainbowTable::MapTable(
         flags = MAP_SHARED;
         prot |= PROT_WRITE;
     }
-    
+
     m_MappedTable = (uint8_t*)mmap(nullptr, m_MappedFileSize, prot, flags, fileno(m_MappedTableFd), 0);
     if (m_MappedTable == MAP_FAILED)
     {
@@ -690,10 +708,10 @@ RainbowTable::IndexTable(
     const uint16_t first = *(uint16_t*) base;
     m_MappedTableLookup[first] = GetRecordAt(0);
 
-    constexpr size_t READAHEAD = 64;
+    const size_t readahead = GetCount() > 65536 * 8 ? GetCount() / 65536 : 64;
 
     // First pass
-    for (size_t i = 0; i < GetCount(); i+= READAHEAD)
+    for (size_t i = 0; i < GetCount(); i+= readahead)
     {
         const uint8_t* const next = GetEndpointAt(i);
         const uint16_t index = *(uint16_t*)next;
@@ -764,9 +782,9 @@ RainbowTable::IndexTable(
             }
         }
 
-        assert(next == nullptr || next > offset); 
+        assert(next == nullptr || next > offset);
         assert(next == nullptr || (uint64_t)(next - offset) % chainWidth == 0);
-        
+
         if(next != nullptr)
         {
             m_MappedTableLookupSize[i] = (next - m_MappedTableLookup[i]);
@@ -848,6 +866,7 @@ RainbowTable::DoHashHex(
 )
 {
     uint8_t buffer[MAX_BUFFER_SIZE];
+    DoHash(Data, Length, buffer, Algorithm);
     return Util::ToHex(buffer, GetHashWidth(Algorithm));
 }
 
@@ -928,26 +947,6 @@ RainbowTable::FindEndpoint(
     return (size_t)-1;
 }
 
-/* static */ std::unique_ptr<Reducer>
-RainbowTable::GetReducer(
-    const size_t Min,
-    const size_t Max,
-    const size_t HashWidth,
-    const std::string& Charset
-)
-{
-    // For tables where the min and max are the same
-    // (we are reducing to a constant length), we can
-    // use the significantly faster BytewiseReducer
-    if (Min == Max)
-    {
-        return std::make_unique<BytewiseReducer>(Min, Max, HashWidth, Charset);
-    }
-    // Otherwise we need to fall back to the much slower
-    // modulo reducer which requires big integer division
-    return std::make_unique<ModuloReducer>(Min, Max, HashWidth, Charset);
-}
-
 std::optional<std::string>
 RainbowTable::CrackOne(
     std::string& Hash
@@ -964,7 +963,7 @@ RainbowTable::CrackOne(
 
     std::vector<uint8_t> hash(m_HashWidth);
     std::vector<char> reduced(m_Max);
-    auto reducer = GetReducer();
+    HybridReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
     size_t length;
 
     // Perform check
@@ -974,13 +973,13 @@ RainbowTable::CrackOne(
 
         for (size_t j = i; j < m_Length - 1; j++)
         {
-            length = reducer->Reduce(&reduced[0], m_Max, &hash[0], j);
+            length = reducer.Reduce(&reduced[0], m_Max, &hash[0], j);
             DoHash((uint8_t*)&reduced[0], length, &hash[0]);
         }
 
         // Final reduction
-        length = reducer->Reduce(&reduced[0], m_Max, &hash[0], m_Length - 1);
-    
+        length = reducer.Reduce(&reduced[0], m_Max, &hash[0], m_Length - 1);
+
         // Check end, if it matches, we can perform one full chain to see if we find it
         size_t index = FindEndpoint(&reduced[0], length);
         if (index != (size_t)-1)
@@ -1005,7 +1004,7 @@ RainbowTable::ResultFound(
     const std::string Result
 )
 {
-    std::cout << Hash << " " << Result << std::endl;
+    std::cout << Hash << m_Separator << Result << std::endl;
 }
 
 void
@@ -1015,9 +1014,9 @@ RainbowTable::CrackSimd(
 {
     size_t lanes = Hashes.size();
     std::vector<std::vector<uint8_t>> hashbytes;
-    auto reducer = GetReducer();
+    HybridReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
     size_t cracked = 0;
-    SimdHashBufferFixed<MAX_SIZE> words;
+    SimdHashBufferFixed<MAX_LENGTH> words;
     std::array<uint8_t, MAX_HASH_SIZE * MAX_LANES> hashes;
     const size_t hashWidth = m_HashWidth;
 
@@ -1044,15 +1043,11 @@ RainbowTable::CrackSimd(
             for (size_t h = 0; h < lanes; h++)
             {
                 const uint8_t* hash = &hashes[h * hashWidth];
-                const size_t length = reducer->Reduce((char*)words[h], m_Max, hash, j);
+                const size_t length = reducer.Reduce((char*)words[h], m_Max, hash, j);
                 assert(length != (size_t)-1 && length >= m_Min && length <= m_Max);
-                if (length < m_Max)
-                {
-                    std::cout << length << ' ' << std::string((char*)words[h], length);
-                }
                 words.SetLength(h, length);
             }
-            
+
             // Perform hash
             SimdHash(
                 m_Algorithm,
@@ -1066,7 +1061,7 @@ RainbowTable::CrackSimd(
         for (size_t h = 0; h < lanes; h++)
         {
             const uint8_t* hash = &hashes[h * hashWidth];
-            const size_t length = reducer->Reduce((char*)words[h], m_Max, hash, m_Length - 1);
+            const size_t length = reducer.Reduce((char*)words[h], m_Max, hash, m_Length - 1);
             assert(length != (size_t)-1 && length >= m_Min && length <= m_Max);
             // Check end, if it matches, we can perform one full chain to see if we find it
             size_t index = FindEndpoint((char*)words[h], length);
@@ -1216,7 +1211,7 @@ RainbowTable::Crack(
         auto result = CrackOne(Target);
         if (result)
         {
-            std::cout << Target << ' ' << result.value() << std::endl;
+            std::cout << Target << m_Separator << result.value() << std::endl;
         }
 
         // Stop the main dispatcher
@@ -1235,7 +1230,7 @@ RainbowTable::Crack(
 
         // Create the dispatchers
         m_DispatchPool = dispatch::CreateDispatchPool("pool", m_Threads);
-        
+
         // Loop through and start the cracking jobs
         for (size_t i = 0; i < m_Threads; i++)
         {
@@ -1263,14 +1258,14 @@ RainbowTable::ValidateChain(
     size_t length;
     std::vector<uint8_t> hash(m_HashWidth);
     std::vector<char> reduced(m_Max);
-    auto reducer = GetReducer();
+    HybridReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
     mpz_class counter = WordGenerator::WordLengthIndex(m_Min, m_Charset);
     counter += ChainIndex;
 
     auto start = WordGenerator::GenerateWord(counter,m_Charset);
     length = start.size();
     memcpy(&reduced[0], start.c_str(), length);
-    
+
     for (size_t i = 0; i < m_Length; i++)
     {
         DoHash((uint8_t*)&reduced[0], length, &hash[0]);
@@ -1278,7 +1273,7 @@ RainbowTable::ValidateChain(
         {
             return std::string(&reduced[0], &reduced[length]);
         }
-        length = reducer->Reduce(&reduced[0], m_Max, &hash[0], i);
+        length = reducer.Reduce(&reduced[0], m_Max, &hash[0], i);
     }
     return {};
 }
@@ -1434,7 +1429,7 @@ RainbowTable::RemoveStartpoints(
         std::cerr << "Error unmapping table after removing start points" << std::endl;
         return;
     }
-    
+
     size_t newSize = sizeof(TableHeader) + (GetCount() * GetMax());
     auto result = truncate(m_Path.c_str(), newSize);
     if (result != 0)
@@ -1513,7 +1508,7 @@ RainbowTable::ChangeType(
         fclose(fhw);
     }
 
-    // Perform sort and cleanup work on the new table    
+    // Perform sort and cleanup work on the new table
     RainbowTable newtable;
     newtable.SetPath(Destination);
 
@@ -1522,7 +1517,7 @@ RainbowTable::ChangeType(
         std::cerr << "Decompressed table does not seem valid" << std::endl;
         return;
     }
-    
+
     if (!newtable.LoadTable())
     {
         std::cerr << "Error loading new table" << std::endl;
@@ -1567,7 +1562,6 @@ RainbowTable::GetChain(
     if (hdr.type == (uint8_t)TypeUncompressed)
     {
         fread(&start, sizeof(rowindex_t), 1, fh);
-        
     }
     mpz_class lowerbound = WordGenerator::WordLengthIndex(hdr.min, charset);
     auto word = WordGenerator::GenerateWord(lowerbound + start, charset);
@@ -1597,7 +1591,7 @@ RainbowTable::ComputeChain(
     Chain chain;
     size_t hashLength;
     std::string start;
-    
+
     hashLength = GetHashWidth(Algorithm);
 
     chain.SetIndex(Index);
@@ -1609,18 +1603,18 @@ RainbowTable::ComputeChain(
     start = WordGenerator::GenerateWord(counter, Charset);
     chain.SetStart(start);
 
-    auto reducer = GetReducer(Min, Max, hashLength, Charset);
+    HybridReducer reducer(Min, Max, hashLength, Charset);
 
     std::vector<uint8_t> hash(hashLength);
     std::vector<char> reduced(Max);
     size_t reducedLength = start.size();
 
     memcpy(&reduced[0], start.c_str(), reducedLength);
-    
+
     for (size_t i = 0; i < Length; i++)
     {
         DoHash((uint8_t*)&reduced[0], reducedLength, &hash[0], Algorithm);
-        reducedLength = reducer->Reduce(&reduced[0], Max, &hash[0], i);
+        reducedLength = reducer.Reduce(&reduced[0], Max, &hash[0], i);
     }
 
     chain.SetEnd(std::string(&reduced[0], &reduced[reducedLength]));
