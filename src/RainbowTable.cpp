@@ -150,7 +150,7 @@ RainbowTable::GenerateBlock(
         for (size_t i = 0; i < m_Length; i++)
         {
             // Perform hash
-            SimdHash(
+            SimdHashOptimized(
                 m_Algorithm,
                 words.GetLengths(),
                 words.ConstBuffers(),
@@ -527,6 +527,19 @@ RainbowTable::ValidateConfig(
     if (m_Algorithm == HashAlgorithmUndefined)
     {
         std::cerr << "No algorithm specified" << std::endl;
+        return false;
+    }
+
+    const size_t optimizedMax = GetOptimizedLength(m_Algorithm);
+    if (m_Max > optimizedMax)
+    {
+        std::cerr << "Max length cannot exceed optimized hash limit (" << optimizedMax << ")" << std::endl;
+        return false;
+    }
+
+    if (m_Min > optimizedMax)
+    {
+        std::cerr << "Min length cannot exceed optimized hash limit (" << optimizedMax << ")" << std::endl;
         return false;
     }
 
