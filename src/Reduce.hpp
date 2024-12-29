@@ -146,6 +146,37 @@ protected:
         // Copy the extended buffer back
         memcpy(Buffer, &temp[LengthWords], LengthWords * sizeof(uint32_t));
     }
+
+    inline const size_t
+    GetCharsUnbiased(
+        char* const Destination,
+        const uint8_t* Buffer,
+        const size_t Offset,
+        const size_t Length,
+        const uint8_t ModMax
+    )
+    {
+        // Now read bytes from the remaining input buffer
+        size_t bytesWritten = 0;
+        const size_t charsetSize = m_Charset.size();
+        size_t offset = Offset;
+        while (bytesWritten < Length)
+        {
+            if (offset >= m_HashLength)
+            {
+                ExtendEntropy((uint32_t*)Buffer, m_HashLengthWords);
+                offset = 0;
+            }
+
+            uint8_t next = Buffer[offset++];
+            if (next < ModMax)
+            {
+                Destination[bytesWritten++] = m_Charset[next % charsetSize];
+            }
+        }
+        return bytesWritten;
+    }
+
     const size_t m_Min;
     const size_t m_Max;
     const size_t m_HashLength;
@@ -366,28 +397,19 @@ public:
         }
 
         // Now read bytes from the remaining input buffer
-        size_t bytesWritten = 0;
-        const size_t charsetSize = m_Charset.size();
         // Update the used bytes to account for entropy used in length calculation
         offset += m_BytesRequired - 1;
         // Or... just reset it to zero to minimize entropy extension.. Is reusing
         // the entropy used in the length calculation a bad thing...?
         // offset = 0;
-        while (bytesWritten < length)
-        {
-            if (offset >= m_HashLength)
-            {
-                ExtendEntropy((uint32_t*)buffer, m_HashLengthWords);
-                offset = 0;
-            }
 
-            uint8_t next = buffer[offset++];
-            if (next < m_ModMax)
-            {
-                Destination[bytesWritten++] = m_Charset[next % charsetSize];
-            }
-        }
-        return bytesWritten;
+        return GetCharsUnbiased(
+            Destination,
+            buffer,
+            offset,
+            length,
+            m_ModMax
+        );
     }
 private:
     size_t m_BytesRequired;
@@ -417,30 +439,17 @@ public:
         const size_t Iteration
     ) override
     {
-        const size_t HashLength = m_HashLength;
-        uint8_t buffer[HashLength];
-        // Copy hash to buffer
-        memcpy(buffer, Hash, HashLength);
-        // Loop and get all characters
-        size_t bufferOffset = 0;
-        size_t bytesWritten = 0;
-        size_t charsetSize = m_Charset.size();
-        
-        while (bytesWritten < m_Max /* m_Min == m_Max */)
-        {
-            if (bufferOffset == HashLength)
-            {
-                ExtendEntropy((uint32_t*)buffer, m_HashLengthWords);
-                bufferOffset = 0;
-            }
+        uint8_t buffer[m_HashLength];
+        // Copy hash to buffer so we can update it
+        memcpy(buffer, Hash, m_HashLength);
 
-            uint8_t next = buffer[bufferOffset++];
-            if (next < m_ModMax)
-            {
-                Destination[bytesWritten++] = m_Charset[next % charsetSize];
-            }
-        }
-        return bytesWritten;
+        return GetCharsUnbiased(
+            Destination,
+            buffer,
+            0,
+            m_Max,
+            m_ModMax
+        );
     };
 private:
     size_t m_ModMax;
