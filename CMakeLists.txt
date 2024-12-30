@@ -8,9 +8,7 @@ if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "")
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "" FORCE)
 endif()
 
-add_definitions(-DOPTIMIZE)
 add_subdirectory(./SimdHash/)
-remove_definitions(-DOPTIMIZE)
 add_subdirectory(./libdispatchqueue/)
 
 # specify clang

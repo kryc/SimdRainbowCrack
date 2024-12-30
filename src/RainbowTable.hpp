@@ -45,7 +45,7 @@ typedef struct  __attribute__((__packed__)) _TableHeader
     char     charset[128];
 } TableHeader;
 
-typedef uint32_t rowindex_t;
+typedef uint64_t rowindex_t;
 
 class RainbowTable
 {

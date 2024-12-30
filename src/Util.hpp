@@ -12,6 +12,7 @@
 #include <vector>
 #include <string>
 #include <cstdint>
+#include <gmpxx.h>
 
 namespace Util
 {
@@ -35,6 +36,29 @@ IsHex(
 std::string
 ToLower(
     const std::string& String
+);
+
+const std::string
+Hexlify(
+    const std::string& Value
+);
+
+double
+NumFactor(
+    const double Value,
+    std::string& HumanFactor
+);
+
+mpz_class
+NumFactor(
+    const mpz_class Value,
+    std::string& HumanFactor
+);
+
+const double
+SizeFactor(
+    const double SizeBytes,
+    std::string& HumanFactor
 );
 
 }

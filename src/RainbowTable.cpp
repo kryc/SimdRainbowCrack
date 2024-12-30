@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstddef>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <mutex>
 #include <optional>
@@ -52,6 +53,15 @@ RainbowTable::InitAndRunBuild(
         std::cerr << "Calculated chains required: " << keyspace.get_str() << std::endl;
         m_Count = keyspace.get_ui();
     }
+
+    // Estimate table size
+    double tableSize = sizeof(TableHeader) + (m_Count * m_Max);
+    std::string tableSizeCh;
+    tableSize = Util::SizeFactor(tableSize, tableSizeCh);
+    std::cerr << "Estimated table size: " << std::fixed << std::setprecision(2) << tableSize << ' ' << tableSizeCh << " compressed (";
+    tableSize = sizeof(TableHeader) + (m_Count * (m_Max + sizeof(rowindex_t)));
+    tableSize = Util::SizeFactor(tableSize, tableSizeCh);
+    std::cerr << tableSize << ' ' << tableSizeCh << " uncompressed)" << std::endl;
 
     // Write the table header if we didn't load from disk
     if (!m_PathLoaded)
@@ -234,29 +244,6 @@ RainbowTable::WriteBlock(
     m_ChainsWritten += Block.size();
 }
 
-char
-DoubleMultipleChar(
-    double& Value
-)
-{
-    if (Value > 1000000000.f)
-    {
-        Value /= 1000000000.f;
-        return 'b';
-    }
-    else if (Value > 1000000.f)
-    {
-        Value /= 1000000.f;
-        return 'm';
-    }
-    else if (Value > 1000.f)
-    {
-        Value /= 1000.f;
-        return 'k';
-    }
-    return ' ';
-}
-
 void
 RainbowTable::OutputStatus(
     const SmallString& LastEndpoint
@@ -274,11 +261,13 @@ RainbowTable::OutputStatus(
     double chainsPerSec = 1000.f * m_Blocksize / averageMs;
     double hashesPerSec = chainsPerSec * m_Length;
 
-    char cpsChar = DoubleMultipleChar(chainsPerSec);
-    char hpsChar = DoubleMultipleChar(hashesPerSec);
+    std::string cpsChar, hpsChar;
+    chainsPerSec = Util::NumFactor(chainsPerSec, cpsChar);
+    hashesPerSec = Util::NumFactor(hashesPerSec, hpsChar);
 
     double chains = (double)(m_StartingChains + m_ChainsWritten);
-    char chainsChar = DoubleMultipleChar(chains);
+    std::string chainsChar;
+    chains = Util::NumFactor(chains, chainsChar);
 
     double percent = ((double)(m_StartingChains + m_ChainsWritten) / (double)m_Count) * 100.f;
 
@@ -289,14 +278,14 @@ RainbowTable::OutputStatus(
     memset(statusbuf, ' ', sizeof(statusbuf) - 1);
     int count = snprintf(
         statusbuf, sizeof(statusbuf),
-        "C:%.1lf%c(%.1f%%) C/s: %.1lf%c H/s:%.1lf%c E:\"%s\"",
+        "C:%.1lf%s(%.1f%%) C/s: %.1lf%s H/s:%.1lf%s E:\"%s\"",
             chains,
-            chainsChar,
+            chainsChar.c_str(),
             percent,
             chainsPerSec,
-            cpsChar,
+            cpsChar.c_str(),
             hashesPerSec,
-            hpsChar,
+            hpsChar.c_str(),
             (char*)LastEndpoint.Value
     );
     if (count < sizeof(statusbuf) - 1)
@@ -1577,7 +1566,8 @@ RainbowTable::GetChain(
         fread(&start, sizeof(rowindex_t), 1, fh);
     }
     mpz_class lowerbound = WordGenerator::WordLengthIndex(hdr.min, charset);
-    auto word = WordGenerator::GenerateWord(lowerbound + start, charset);
+    static_assert(sizeof(rowindex_t) == 4 || (sizeof(unsigned long int) == sizeof(rowindex_t)));
+    auto word = WordGenerator::GenerateWord(lowerbound + (unsigned long int)start, charset);
     chain.SetStart(word);
 
     std::string endpoint;
