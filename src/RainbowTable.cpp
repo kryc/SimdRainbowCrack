@@ -50,8 +50,8 @@ RainbowTable::InitAndRunBuild(
     {
         mpz_class keyspace = WordGenerator::WordLengthIndex(m_Max + 1, m_Charset) - WordGenerator::WordLengthIndex(m_Min, m_Charset);
         keyspace /= m_Length + 1;
-        // Add 5% for overhead
-        keyspace += (keyspace / 20);
+        // Add 10% for overhead
+        keyspace += (keyspace / 10);
         std::cerr << "Calculated chains required: " << keyspace.get_str() << std::endl;
         m_Count = keyspace.get_ui();
     }
