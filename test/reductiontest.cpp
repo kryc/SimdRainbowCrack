@@ -28,7 +28,11 @@ void TestReducer(
     std::map<size_t, size_t> distributions;
     size_t iteration;
     
+#ifdef BIGINT
     std::cout << "Exhausting keyspace: " << Reducer->GetKeyspace().get_str() << std::endl;
+#else
+    std::cout << "Exhausting keyspace: " << Reducer->GetKeyspace() << std::endl;
+#endif
 
     for (mpz_class i = 0; i < Reducer->GetKeyspace(); i++)
     {
