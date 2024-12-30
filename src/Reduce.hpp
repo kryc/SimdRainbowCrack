@@ -20,6 +20,12 @@
 #include "Common.hpp"
 #include "WordGenerator.hpp"
 
+#ifdef BIGINT
+typedef mpz_class index_t;
+#else
+typedef uint64_t index_t;
+#endif
+
 static inline uint32_t
 rotl(
     const uint32_t Value,
@@ -40,7 +46,7 @@ rotr(
 
 static inline void
 calculate_bytes_required(
-    const mpz_class Value,
+    const index_t Value,
     size_t* BytesRequired,
     uint8_t* MSBMask
 )
@@ -48,7 +54,7 @@ calculate_bytes_required(
     // Figure out the smallest number of bits of
     // input hash data required to represent _Value_
     size_t bitsRequired = 0;
-    mpz_class mask = 0;
+    index_t mask = 0;
     size_t bitsoverflow;
 
     while (mask < Value)
@@ -91,6 +97,27 @@ calculate_modulo_bias_mask(
     return floor(pow(2, 8) / (maxval + 1)) * (maxval + 1);
 }
 
+static inline index_t
+load_bytes_to_index(
+    const uint8_t* const Buffer,
+    const size_t Offset,
+    const size_t Length
+)
+{
+#ifdef BIGINT
+    index_t reduction;
+    mpz_import(reduction.get_mpz_t(), m_BytesRequired, 1, sizeof(uint8_t), 0, 0, &hashBuffer[offset]);
+#else
+    index_t reduction = 0;
+    for (size_t i = 0; i < Length; i++)
+    {
+        reduction <<= 8;
+        reduction |= Buffer[Offset + i];
+    }
+#endif
+    return reduction;
+}
+
 class Reducer
 {
 public:
@@ -104,8 +131,13 @@ public:
         m_HashLength(HashLength),
         m_HashLengthWords(HashLength/sizeof(uint32_t)),
         m_Charset(Charset),
+#ifdef BIGINT
         m_MinIndex(WordGenerator::WordLengthIndex(Min, Charset)),
         m_MaxIndex(WordGenerator::WordLengthIndex(Max + 1, Charset))
+#else
+        m_MinIndex(WordGenerator::WordLengthIndex64(Min, Charset)),
+        m_MaxIndex(WordGenerator::WordLengthIndex64(Max + 1, Charset))
+#endif
         { };
     virtual size_t Reduce(
         char* Destination,
@@ -118,9 +150,9 @@ public:
     const size_t GetMax(void) const { return m_Max; }
     const size_t GetHashLength(void) const { return m_HashLength; }
     const std::string& GetCharset(void) const  { return m_Charset; }
-    const mpz_class GetMinIndex(void) const { return m_MinIndex; }
-    const mpz_class GetMaxIndex(void) const { return m_MaxIndex; }
-    const mpz_class GetKeyspace(void) const { return m_MaxIndex - m_MinIndex; }
+    const index_t GetMinIndex(void) const { return m_MinIndex; }
+    const index_t GetMaxIndex(void) const { return m_MaxIndex; }
+    const index_t GetKeyspace(void) const { return m_MaxIndex - m_MinIndex; }
 protected:
     // A basic entropy extension function based on SHA256 extension
     // It replaces the data in a destination buffer
@@ -182,8 +214,8 @@ protected:
     const size_t m_HashLength;
     const size_t m_HashLengthWords;
     const std::string m_Charset;
-    const mpz_class m_MinIndex;
-    const mpz_class m_MaxIndex;
+    const index_t m_MinIndex;
+    const index_t m_MaxIndex;
 };
 
 class BasicModuloReducer : public Reducer
@@ -203,9 +235,9 @@ public:
         const size_t Iteration
     ) override
     {
-        mpz_class reduction;
+        
         // Parse the hash as a single bigint
-        mpz_import(reduction.get_mpz_t(), m_HashLength, 1, sizeof(uint8_t), 1, 0, Hash);
+        index_t reduction = load_bytes_to_index(Hash, 0, m_HashLength);
         return PerformReduction(
             Destination,
             DestLength,
@@ -219,7 +251,7 @@ protected:
     inline size_t PerformReduction(
         char* Destination,
         const size_t DestLength,
-        mpz_class& Value,
+        index_t& Value,
         const size_t Iteration
     )
     {
@@ -273,7 +305,7 @@ public:
         // Repeatedly try to load the hash integer until it is in range
         // we do this to avoid a modulo bias favouring reduction at the bottom
         // end of the password space
-        mpz_class reduction = GetKeyspace() + 1;
+        index_t reduction = GetKeyspace() + 1;
         size_t offset = 0;
         while (reduction > GetKeyspace())
         {
@@ -285,8 +317,8 @@ public:
             // Mask off the most significant bit
             uint8_t mostSigByte = hashBuffer[offset];
             hashBuffer[offset] = mostSigByte & m_MsbMask;
-            // Parse the hash as a single bigint
-            mpz_import(reduction.get_mpz_t(), m_BytesRequired, 1, sizeof(uint8_t), 0, 0, &hashBuffer[offset]);
+            // Parse the hash as a single integer
+            reduction = load_bytes_to_index(hashBuffer, offset, m_BytesRequired);
             // Replace the original entropy in case we need to extend
             hashBuffer[offset] = mostSigByte;
             // Move the offset along
@@ -315,12 +347,17 @@ public:
         const std::string& Charset
     ) : Reducer(Min, Max, HashLength, Charset)
     {
-        mpz_class total = 0;
+        index_t total = 0;
         for (size_t i = Min; i <= Max; i++)
         {
+#ifdef BIGINT
             const mpz_class lower = WordGenerator::WordLengthIndex(i, Charset);
             const mpz_class upper = WordGenerator::WordLengthIndex(i + 1, Charset);
-            const mpz_class keyspace = upper - lower;
+#else
+            const uint64_t lower = WordGenerator::WordLengthIndex64(i, Charset);
+            const uint64_t upper = WordGenerator::WordLengthIndex64(i + 1, Charset);
+#endif
+            const index_t keyspace = upper - lower;
             total += keyspace;
             m_Limits[i] = total;
         }
@@ -332,6 +369,10 @@ public:
             &m_BytesRequired,
             &m_MsbMask
         );
+
+#ifndef BIGINT
+        assert(m_BytesRequired <= sizeof(uint64_t));
+#endif
 
         m_ModMax = calculate_modulo_bias_mask(m_Charset.size());
     }
@@ -363,7 +404,7 @@ public:
             // Repeatedly try to load the hash integer until it is in range
             // we do this to avoid a modulo bias favouring reduction at the bottom
             // end of the password space
-            mpz_class reduction = m_Limits[m_Max] + 1;
+            index_t reduction = m_Limits[m_Max] + 1;
             while (reduction >= m_Limits[m_Max])
             {
                 if (offset + m_BytesRequired == m_HashLength)
@@ -372,12 +413,12 @@ public:
                     offset = 0;
                 }
                 // Mask off the most significant bit
-                const uint8_t mostSigByte = buffer[offset];
-                buffer[offset] = mostSigByte & m_MsbMask;
-                // Parse the hash as a single bigint
-                mpz_import(reduction.get_mpz_t(), m_BytesRequired, 1, sizeof(uint8_t), 0, 0, &buffer[offset]);
+                // const uint8_t mostSigByte = buffer[offset];
+                // buffer[offset] = mostSigByte & m_MsbMask;
+                // Parse the hash as a single integer
+                reduction = load_bytes_to_index(buffer, offset, m_BytesRequired);
                 // Replace the original entropy in case we need to extend
-                buffer[offset] = mostSigByte;
+                // buffer[offset] = mostSigByte;
                 // Move the offset along
                 offset++;
             }
@@ -414,7 +455,7 @@ public:
 private:
     size_t m_BytesRequired;
     uint8_t m_MsbMask;
-    std::array<mpz_class, MAX_LENGTH> m_Limits{};
+    std::array<index_t, MAX_LENGTH> m_Limits{};
     size_t m_ModMax;
 };
 

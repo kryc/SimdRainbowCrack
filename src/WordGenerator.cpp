@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <iostream>
+#include <cmath>
 #include <string>
 #include <vector>
 #include <gmpxx.h>
@@ -20,7 +21,7 @@
 // Static
 std::string
 WordGenerator::GenerateWord(
-    const size_t Value,
+    const uint64_t Value,
     const std::string& Charset
 )
 {
@@ -42,7 +43,7 @@ WordGenerator::GenerateWord(
 // Static
 std::string
 WordGenerator::GenerateWordReversed(
-    const size_t Value,
+    const uint64_t Value,
     const std::string& Charset
 )
 {
@@ -126,9 +127,47 @@ WordGenerator::GenerateWordReversed(
     return length;
 }
 
+// Static
+const size_t
+WordGenerator::GenerateWord(
+    char* Destination,
+    const size_t DestSize,
+    const uint64_t Value,
+    const std::string& Charset
+)
+{
+    uint64_t i = Value;
+    uint64_t r;
+    size_t length = 0;
+
+    while (i > 0)
+    {
+        i--;
+        r = i % Charset.length();
+        i /= Charset.length();
+        Destination[length++] = Charset[r];
+    }
+
+    return length;
+}
+
+// Static
+const size_t
+WordGenerator::GenerateWordReversed(
+    char* Destination,
+    const size_t DestSize,
+    const uint64_t Value,
+    const std::string& Charset
+)
+{
+    size_t length = GenerateWord(Destination, DestSize, Value, Charset);
+    std::reverse(Destination, Destination + length);
+    return length;
+}
+
 const std::string
 WordGenerator::Generate(
-    const size_t Value
+    const uint64_t Value
 )
 {
     return m_Prefix + GenerateWord(Value, m_Charset) + m_Postfix;
@@ -136,7 +175,7 @@ WordGenerator::Generate(
 
 const std::string
 WordGenerator::GenerateReversed(
-    const size_t Value
+    const uint64_t Value
 )
 {
     return m_Prefix + GenerateWordReversed(Value, m_Charset) + m_Postfix;
@@ -252,6 +291,40 @@ WordGenerator::GenerateParsingLookupTable(
     return table;
 }
 
+// static
+void
+WordGenerator::WordLengthIndex(
+    const size_t WordLength,
+    const std::string& Charset,
+    uint64_t& Index
+)
+{
+    uint64_t product = 0;
+    Index = 0;
+    for (size_t i = 0; i < WordLength; i++)
+    {
+        product = std::pow(Charset.size(), i);
+        Index += product;
+    }
+}
+
+// static
+void
+WordGenerator::WordLengthIndex(
+    const size_t WordLength,
+    const std::string& Charset,
+    mpz_class& Index
+)
+{
+    Index = 0;
+    mpz_class product;
+    for (size_t i = 0; i < WordLength; i++)
+    {
+        mpz_ui_pow_ui(product.get_mpz_t(), Charset.size(), i);
+        Index += product;
+    }
+}
+
 // Static
 const mpz_class
 WordGenerator::WordLengthIndex(
@@ -259,14 +332,21 @@ WordGenerator::WordLengthIndex(
     const std::string& Charset
 )
 {
-    mpz_class counter = 0;
-    mpz_class product;
-    for (size_t i = 0; i < WordLength; i++)
-    {
-        mpz_ui_pow_ui(product.get_mpz_t(), Charset.size(), i);
-        counter += product;
-    }
-    return counter;
+    mpz_class index;
+    WordLengthIndex(WordLength, Charset, index);
+    return index;
+}
+
+// static
+const uint64_t
+WordGenerator::WordLengthIndex64(
+    const size_t WordLength,
+    const std::string& Charset
+)
+{
+    uint64_t index;
+    WordLengthIndex(WordLength, Charset, index);
+    return index;
 }
 
 const std::string&

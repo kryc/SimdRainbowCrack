@@ -39,14 +39,16 @@ public:
     WordGenerator(const std::string& Charset) : m_Charset(Charset) {};
     WordGenerator(const std::string& Charset, std::string Prefix, std::string Postfix)
         : m_Charset(Charset),m_Prefix(Prefix),m_Postfix(Postfix) {};
-    static std::string  GenerateWord(const size_t Value, const std::string& Charset);
-    static std::string  GenerateWordReversed(const size_t Value, const std::string& Charset);
+    static std::string  GenerateWord(const uint64_t Value, const std::string& Charset);
+    static std::string  GenerateWordReversed(const uint64_t Value, const std::string& Charset);
     static std::string  GenerateWord(const mpz_class& Value, const std::string& Charset);
     static std::string  GenerateWordReversed(const mpz_class& Value, const std::string& Charset);
     static const size_t GenerateWord(char * Destination, const size_t DestSize, const mpz_class& Value, const std::string& Charset);
     static const size_t GenerateWordReversed(char * Destination, const size_t DestSize, const mpz_class& Value, const std::string& Charset);
-    const std::string   Generate(const size_t Value);
-    const std::string   GenerateReversed(const size_t Value);
+    static const size_t GenerateWord(char * Destination, const size_t DestSize, const uint64_t Value, const std::string& Charset);
+    static const size_t GenerateWordReversed(char * Destination, const size_t DestSize, const uint64_t Value, const std::string& Charset);
+    const std::string   Generate(const uint64_t Value);
+    const std::string   GenerateReversed(const uint64_t Value);
     const std::string   Generate(const mpz_class& Value);
     const std::string   GenerateReversed(const mpz_class& Value);
     const size_t        Generate(char * Destination, const size_t DestSize, const mpz_class& Value);
@@ -62,7 +64,10 @@ public:
     void SetPrefix(std::string& Prefix) { m_Prefix = Prefix; };
     void SetPostfix(std::string& Postfix) { m_Postfix = Postfix; };
     const std::string GetCharset(void) { return m_Charset; };
+    static void WordLengthIndex(const size_t WordLength, const std::string& Charset, uint64_t& Index);
+    static void WordLengthIndex(const size_t WordLength, const std::string& Charset, mpz_class& Index);
     static const mpz_class WordLengthIndex(const size_t WordLength, const std::string& Charset);
+    static const uint64_t WordLengthIndex64(const size_t WordLength, const std::string& Charset);
     const mpz_class WordLengthIndex(const size_t WordLength) { return WordGenerator::WordLengthIndex(WordLength, m_Charset); };
 private:
     const std::string m_Charset;

@@ -50,6 +50,8 @@ RainbowTable::InitAndRunBuild(
     {
         mpz_class keyspace = WordGenerator::WordLengthIndex(m_Max + 1, m_Charset) - WordGenerator::WordLengthIndex(m_Min, m_Charset);
         keyspace /= m_Length + 1;
+        // Add 5% for overhead
+        keyspace += (keyspace / 20);
         std::cerr << "Calculated chains required: " << keyspace.get_str() << std::endl;
         m_Count = keyspace.get_ui();
     }
@@ -139,7 +141,11 @@ RainbowTable::GenerateBlock(
     std::array<uint8_t, MAX_HASH_SIZE * MAX_LANES> hashes;
 
     // Calculate lower bound and add the current index
+#ifdef BIGINT
     mpz_class counter = CalculateLowerBound() + blockStartId;
+#else
+    uint64_t counter = CalculateLowerBound() + blockStartId;
+#endif
     const size_t hashWidth = m_HashWidth;
     const size_t lanes = SimdLanes();
 
@@ -278,7 +284,7 @@ RainbowTable::OutputStatus(
     memset(statusbuf, ' ', sizeof(statusbuf) - 1);
     int count = snprintf(
         statusbuf, sizeof(statusbuf),
-        "C:%.1lf%s(%.1f%%) C/s: %.1lf%s H/s:%.1lf%s E:\"%s\"",
+        "C:%.1lf%s(%.1f%%) C/s:%.1lf%s H/s:%.1lf%s E:\"%s\"",
             chains,
             chainsChar.c_str(),
             percent,
@@ -494,6 +500,16 @@ RainbowTable::ValidateConfig(
         std::cerr << "No min length specified" << std::endl;
         return false;
     }
+
+#ifndef BIGINT
+    mpz_class upperbound = WordGenerator::WordLengthIndex(m_Max + 1, m_Charset);
+    if (upperbound > std::numeric_limits<uint64_t>::max())
+    {
+        std::cerr << "Max length exceeds 64-bit integer limit" << std::endl;
+        std::cerr << "To compile with BIGINT support, recompile with -DBIGINT" << std::endl;
+        return false;
+    }
+#endif
 
     if (m_Max > MAX_LENGTH)
     {
@@ -1261,7 +1277,11 @@ RainbowTable::ValidateChain(
     std::vector<uint8_t> hash(m_HashWidth);
     std::vector<char> reduced(m_Max);
     HybridReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
+#ifdef BIGINT
     mpz_class counter = WordGenerator::WordLengthIndex(m_Min, m_Charset);
+#else
+    uint64_t counter = WordGenerator::WordLengthIndex64(m_Min, m_Charset);
+#endif
     counter += ChainIndex;
 
     auto start = WordGenerator::GenerateWord(counter,m_Charset);

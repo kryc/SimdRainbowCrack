@@ -120,8 +120,13 @@ private:
     void CrackSimd(std::vector<std::string> Hashes);
     void ResultFound(const std::string Hash, const std::string Result);
     void IndexTable(void);
+#ifdef BIGINT
     static const mpz_class CalculateLowerBound(const size_t Min, const std::string& Charset) { return WordGenerator::WordLengthIndex(Min, Charset); };
     const mpz_class CalculateLowerBound(void) const { return CalculateLowerBound(m_Min, m_Charset); };
+#else
+    static const uint64_t CalculateLowerBound(const size_t Min, const std::string& Charset) { return WordGenerator::WordLengthIndex64(Min, Charset); };
+    const uint64_t CalculateLowerBound(void) const { return CalculateLowerBound(m_Min, m_Charset); };
+#endif
     // General purpose
     std::filesystem::path m_Path;
     bool m_PathLoaded = false;
