@@ -144,7 +144,7 @@ public:
         const size_t DestLength,
         const uint8_t* Hash,
         const size_t Iteration
-    ) = 0;
+    ) const = 0;
     virtual ~Reducer() {};
     const size_t GetMin(void) const { return m_Min; }
     const size_t GetMax(void) const { return m_Max; }
@@ -159,7 +159,7 @@ protected:
     void ExtendEntropy(
         uint32_t* const Buffer,
         const size_t LengthWords
-    )
+    ) const
     {
         uint32_t temp[LengthWords * 2];
         // Copy existing state
@@ -186,7 +186,7 @@ protected:
         const size_t Offset,
         const size_t Length,
         const uint8_t ModMax
-    )
+    ) const
     {
         // Now read bytes from the remaining input buffer
         size_t bytesWritten = 0;
@@ -233,7 +233,7 @@ public:
         const size_t DestLength,
         const uint8_t* Hash,
         const size_t Iteration
-    ) override
+    ) const override
     {
         
         // Parse the hash as a single bigint
@@ -253,7 +253,7 @@ protected:
         const size_t DestLength,
         index_t& Value,
         const size_t Iteration
-    )
+    ) const
     {
         // XOR the current rainbow collumn number
         Value ^= Iteration;
@@ -298,7 +298,7 @@ public:
         const size_t DestLength,
         const uint8_t* Hash,
         const size_t Iteration
-    ) override
+    ) const override
     {
         uint8_t hashBuffer[m_HashLength];
         memcpy(hashBuffer, Hash, m_HashLength);
@@ -382,7 +382,7 @@ public:
         const size_t DestLength,
         const uint8_t* Hash,
         const size_t Iteration
-    ) override
+    ) const override
     {
         uint8_t buffer[m_HashLength];
         uint32_t * const buffer32 = (uint32_t*) buffer;
@@ -478,7 +478,7 @@ public:
         const size_t DestLength,
         const uint8_t* Hash,
         const size_t Iteration
-    ) override
+    ) const override
     {
         uint8_t buffer[m_HashLength];
         // Copy hash to buffer so we can update it

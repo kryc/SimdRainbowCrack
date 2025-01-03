@@ -69,6 +69,7 @@ public:
     void SetCount(const size_t Count) { m_Count = Count; }
     const size_t GetCount(void) const;
     void SetThreads(const size_t Threads) { m_Threads = Threads; }
+    const size_t GetThreads(void) const { return m_Threads; }
     void SetCharset(const std::string Charset) { m_Charset = ParseCharset(Charset); }
     const std::string& GetCharset(void) const { return m_Charset; }
     void SetType(const TableType Type) { m_TableType = Type; }
@@ -111,16 +112,17 @@ private:
     void WriteBlock(const size_t BlockId, const std::vector<SmallString>& Block);
     void ThreadCompleted(const size_t ThreadId);
     std::optional<std::string> CrackOne(std::string& Target);
+    void CrackOneWorker(const size_t ThreadId, const std::vector<uint8_t> Target);
     const size_t FindEndpoint(const char* Endpoint, const size_t Length) const;
     std::optional<std::string> ValidateChain(const size_t ChainIndex, const uint8_t* Hash) const;
     bool TableMapped(void) { return m_MappedTableFd != nullptr; };
     bool MapTable(const bool ReadOnly = true);
     bool UnmapTable(void);
     void CrackWorker(const size_t ThreadId);
-    void CrackOneWorker(const size_t ThreadId);
     void CrackSimd(std::vector<std::string> Hashes);
     void ResultFound(const std::string Hash, const std::string Result);
     void IndexTable(void);
+    std::optional<std::string> CheckIteration(const HybridReducer& Reducer, const std::vector<uint8_t>& Hash, const size_t Iteration) const;
 #ifdef BIGINT
     static const mpz_class CalculateLowerBound(const size_t Min, const std::string& Charset) { return WordGenerator::WordLengthIndex(Min, Charset); };
     const mpz_class CalculateLowerBound(void) const { return CalculateLowerBound(m_Min, m_Charset); };
@@ -129,6 +131,7 @@ private:
     const uint64_t CalculateLowerBound(void) const { return CalculateLowerBound(m_Min, m_Charset); };
 #endif
     // General purpose
+    std::string m_Operation;
     std::filesystem::path m_Path;
     bool m_PathLoaded = false;
     HashAlgorithm m_Algorithm = HashAlgorithmUndefined;
@@ -167,6 +170,7 @@ private:
     std::ifstream m_HashFileStream;
     std::mutex m_HashFileStreamLock;
     char m_Separator = ':';
+    size_t m_Cracked = 0;
 };
 
 #endif /* RainbowTable_hpp */
