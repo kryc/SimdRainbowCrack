@@ -849,6 +849,8 @@ RainbowTable::IndexTable(
     }
     m_MappedTableLookupSize[last] = count * GetChainWidth();
 #endif
+
+    m_Indexed = true;
 }
 
 /* static */ void
@@ -924,10 +926,8 @@ RainbowTable::FindEndpoint(
     {
         // Lookup this endpoint offset and length
         uint16_t index = *(uint16_t*)Endpoint;
-        const uint8_t* const base = m_MappedTableLookup[index];
-        const uint8_t* const top = (uint8_t*) base + m_MappedTableLookupSize[index];
-        // const uint8_t* const base = m_MappedTable + sizeof(TableHeader);
-        // const uint8_t* const top = (uint8_t*) base + m_MappedTableSize - sizeof(TableHeader);
+        const uint8_t* const base = m_Indexed ? m_MappedTableLookup[index] : m_MappedTable + sizeof(TableHeader);
+        const uint8_t* const top = m_Indexed ? (uint8_t*) base + m_MappedTableLookupSize[index] : (uint8_t*) base + m_MappedTableSize - sizeof(TableHeader);
 
         // Endpoint not found in lookup table
         if (base == nullptr)
@@ -1218,10 +1218,13 @@ RainbowTable::Crack(
         return;
     }
 
-    // Index the table
-    std::cerr << "Indexing table..";
-    IndexTable();
-    std::cerr << " done." << std::endl;
+    // Index the table for multiple lookups
+    if (!m_IndexDisable)
+    {
+        std::cerr << "Indexing table..";
+        IndexTable();
+        std::cerr << " done." << std::endl;
+    }
 
     // Figure out if this is a single hash
     if (Util::IsHex(Target))

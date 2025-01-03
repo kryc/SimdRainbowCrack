@@ -125,6 +125,10 @@ main(
         {
             rainbow.SetAlgorithm("sha256");
         }
+        else if (arg == "--noindex")
+        {
+            rainbow.DisableIndex();
+        }
         else if (rainbow.GetPath().empty())
         {
             rainbow.SetPath(argv[i]);

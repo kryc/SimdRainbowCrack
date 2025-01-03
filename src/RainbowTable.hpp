@@ -77,6 +77,7 @@ public:
     const char GetSeparator(void) const { return m_Separator; }
     std::string GetType(void) const { return m_TableType == TypeCompressed ? "Compressed" : "Uncompressed";  }
     float GetCoverage(void);
+    void DisableIndex(void) { m_IndexDisable = true; }
     bool TableExists(void) const { return std::filesystem::exists(m_Path); }
     static bool GetTableHeader(const std::filesystem::path& Path, TableHeader* Header);
     static bool IsTableFile(const std::filesystem::path& Path);
@@ -159,6 +160,8 @@ private:
     static constexpr size_t LOOKUP_SIZE = std::numeric_limits<uint16_t>::max() + 1;
     const uint8_t* m_MappedTableLookup[LOOKUP_SIZE];
     size_t m_MappedTableLookupSize[LOOKUP_SIZE];
+    bool m_IndexDisable = false;
+    bool m_Indexed = false;
     size_t m_FalsePositives = 0;
     bool m_MappedReadOnly = false;
     std::ifstream m_HashFileStream;
