@@ -30,6 +30,8 @@ int main(
         word = WordGenerator::GenerateWord(i, ASCII);
         word2 = WordGenerator::GenerateWord(bigint, ASCII);
 
+        std::cout << "Word: " << word << std::endl;
+
         if (word != word2)
         {
             std::cerr << "Bigint version for index " << i << " does not match" << std::endl;

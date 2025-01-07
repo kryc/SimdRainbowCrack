@@ -26,16 +26,16 @@ WordGenerator::GenerateWord(
 )
 {
     std::string out;
-    int64_t i;
+    uint64_t r, i = Value;
+    const size_t charsetSize = Charset.size();
     
-    i = (int64_t)Value;
-    
-    while (i > 0)
+    do
     {
-        i--;
-        out += Charset[i % Charset.length()];
-        i /= Charset.length();
-    }
+        r = i % charsetSize;
+        i /= charsetSize;
+        out += Charset[r];
+        
+    } while (i > 0);
      
     return out;
 }
@@ -64,12 +64,10 @@ WordGenerator::GenerateWord(
     mpz_class i(Value);
     mpz_class r;
     
-    while (i > 0)
-    {
-        i--;
+    do {
         mpz_fdiv_qr_ui(i.get_mpz_t(), r.get_mpz_t(), i.get_mpz_t(), Charset.length());
         out += Charset[r.get_ui()];
-    }
+    } while (i > 0);
 
     return out;
 }
@@ -97,18 +95,14 @@ WordGenerator::GenerateWord(
 {
     mpz_class i(Value);
     mpz_class q,r;
-    size_t length;
+    size_t length = 0;
 
-    length = 0;
-
-    while (i > 0)
-    {
-        i--;
+    do {
         mpz_fdiv_qr_ui(i.get_mpz_t(), r.get_mpz_t(), i.get_mpz_t(), Charset.length());
         if (length == DestSize)
             return (size_t)-1;
         Destination[length++] = Charset[r.get_ui()];
-    }
+    } while (i > 0);
 
     return length;
 }
@@ -136,17 +130,15 @@ WordGenerator::GenerateWord(
     const std::string& Charset
 )
 {
-    uint64_t i = Value;
-    uint64_t r;
+    uint64_t r, i = Value;
     size_t length = 0;
+    const size_t charsetSize = Charset.size();
 
-    while (i > 0)
-    {
-        i--;
-        r = i % Charset.length();
-        i /= Charset.length();
+    do {
+        r = i % charsetSize;
+        i /= charsetSize;
         Destination[length++] = Charset[r];
-    }
+    } while (i > 0);
 
     return length;
 }
