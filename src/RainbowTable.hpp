@@ -88,7 +88,7 @@ public:
     bool ValidTable(void) const { return TableExists() && IsTableFile(m_Path); }
     bool LoadTable(void);
     bool Complete(void) const { return m_ThreadsCompleted == m_Threads; }
-    void Crack(std::string& Target);
+    std::vector<std::tuple<std::string, std::string>> Crack(std::string& Target);
     static const size_t ChainWidthForType(const TableType Type, const size_t Max) { return Type == TypeCompressed ? Max : sizeof(rowindex_t) + Max; }
     const size_t GetChainWidth(void) const { return ChainWidthForType(m_TableType, m_Max); }
     static void DoHash(const uint8_t* Data, const size_t Length, uint8_t* Digest, const HashAlgorithm);
@@ -129,15 +129,9 @@ private:
     void ThreadCompleted(const size_t ThreadId);
     // Cracking
     void IndexTable(void);
-    void CrackWorker(const size_t ThreadId);
-    void CrackSimd(std::vector<std::string> Hashes);
-    void CrackInternal(const std::string Target);
     std::optional<std::string> CrackOne(const std::string& Target);
     void CrackOneWorker(const size_t ThreadId, const std::vector<uint8_t> Target);
-    void ReadAndCrackNext(void);
-    void ResultFound(const std::string Hash, const std::string Result);
     std::optional<std::string> CheckIteration(const HybridReducer& Reducer, const std::vector<uint8_t>& Hash, const size_t Iteration) const;
-    void CrackingComplete(void);
 
     // General purpose
     std::string m_Operation;
@@ -169,20 +163,17 @@ private:
     FILE* m_MappedTableFd = nullptr;
     size_t m_MappedFileSize;
     size_t m_MappedTableSize;
-    dispatch::DispatcherBasePtr m_SyncDispatcher;
     static constexpr size_t LOOKUP_SIZE = std::numeric_limits<uint16_t>::max() + 1;
     const uint8_t* m_MappedTableLookup[LOOKUP_SIZE];
     size_t m_MappedTableLookupSize[LOOKUP_SIZE];
     bool m_IndexDisable = false;
     bool m_Indexed = false;
-    size_t m_FalsePositives = 0;
     bool m_MappedReadOnly = false;
     std::ifstream m_HashFileStream;
     std::mutex m_HashFileStreamLock;
     char m_Separator = ':';
     std::atomic<bool> m_Cracked = false;
     std::atomic<size_t> m_CrackingThreadsRunning = 0;
-    bool m_UseSimd = false;
     std::vector<std::tuple<std::string, std::string>> m_CrackedResults;
     std::tuple<std::string, std::string> m_LastCracked;
 };
