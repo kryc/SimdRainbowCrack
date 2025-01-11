@@ -170,14 +170,7 @@ main(
             return check;
         }
 
-        auto mainDispatcher = dispatch::CreateAndEnterDispatcher(
-            "main",
-            dispatch::bind(
-                &RainbowTable::Crack,
-                &rainbow,
-                target
-            )
-        );
+        rainbow.Crack(target);
     }
     else if (action == "decompress" || action == "compress")
     {

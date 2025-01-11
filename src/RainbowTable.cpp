@@ -965,138 +965,6 @@ RainbowTable::FindEndpoint(
     return (size_t)-1;
 }
 
-// Checks a chain assuming the given iteration
-std::optional<std::string>
-RainbowTable::CheckIteration(
-    const HybridReducer& Reducer,
-    const std::vector<uint8_t>& Target,
-    const size_t Iteration
-) const
-{
-    uint8_t hash[m_HashWidth];
-    char    reduced[m_Max];
-    size_t  length;
-
-    memcpy(&hash[0], &Target[0], m_HashWidth);
-
-    for (size_t j = Iteration; j < m_Length - 1; j++)
-    {
-        length = Reducer.Reduce(&reduced[0], m_Max, &hash[0], j);
-        DoHash((uint8_t*)&reduced[0], length, &hash[0]);
-    }
-
-    // Final reduction
-    length = Reducer.Reduce(&reduced[0], m_Max, &hash[0], m_Length - 1);
-
-    // Check end, if it matches, we can perform one full chain to see if we find it
-    size_t index = FindEndpoint(&reduced[0], length);
-    if (index != (size_t)-1)
-    {
-        return ValidateChain(index, &Target[0]);
-    }
-    return std::nullopt;
-}
-
-void
-RainbowTable::CrackOneWorker(
-    const size_t ThreadId,
-    const std::vector<uint8_t> Target
-)
-{
-    HybridReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
-
-    for (ssize_t i = m_Length - 1 - ThreadId; i >= 0 && m_Cracked == 0; i-= m_Threads)
-    {
-        auto result = CheckIteration(reducer, Target, i);
-        if (result.has_value())
-        {
-            dispatch::PostTaskToDispatcher(
-                "main",
-                dispatch::bind(
-                    &RainbowTable::ResultFound,
-                    this,
-                    Util::ToHex(&Target[0], Target.size()),
-                    result.value()
-                )
-            );
-        }
-    }
-
-    // We dropped out, post that we are done
-    dispatch::PostTaskToDispatcher(
-        "main",
-        dispatch::bind(
-            &RainbowTable::ThreadCompleted,
-            this,
-            ThreadId
-        )
-    );
-}
-
-std::optional<std::string>
-RainbowTable::CrackOne(
-    std::string& Hash
-)
-{
-    if (Hash.size() != m_HashWidth * 2)
-    {
-        std::cerr << "Invalid length of provided hash: " << Hash.size() << " != " << m_HashWidth * 2 << std::endl;
-        std::cerr << "Hash: '" << Hash << "'" << std::endl;
-        return std::nullopt;
-    }
-
-    HybridReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
-    auto target = Util::ParseHex(Hash);
-
-    if (m_Threads == 0)
-    {
-        m_Threads = std::thread::hardware_concurrency();
-    }
-
-    // Perform linear check
-    if (m_Threads == 1)
-    {
-        for (ssize_t i = m_Length - 1; i >= 0; i--)
-        {
-            auto result = CheckIteration(reducer, target, i);
-            if (result.has_value())
-            {
-                return result;
-            }
-        }
-        return std::nullopt;
-    }
-    else
-    {
-        m_DispatchPool = dispatch::CreateDispatchPool("pool", m_Threads);
-
-        // Dispatch the work to the worker threads
-        for (size_t i = 0; i < m_Threads; i++)
-        {
-            m_DispatchPool->PostTask(
-                dispatch::bind(
-                    &RainbowTable::CrackOneWorker,
-                    this,
-                    i,
-                    target
-                )
-            );
-        }
-    }
-
-    return std::nullopt;
-}
-
-void
-RainbowTable::ResultFound(
-    const std::string Hash,
-    const std::string Result
-)
-{
-    m_Cracked++;
-    std::cout << Hash << m_Separator << Result << std::endl;
-}
-
 void
 RainbowTable::CrackSimd(
     std::vector<std::string> Hashes
@@ -1230,6 +1098,238 @@ RainbowTable::CrackWorker(
     );
 }
 
+// Checks a chain assuming the given iteration
+std::optional<std::string>
+RainbowTable::CheckIteration(
+    const HybridReducer& Reducer,
+    const std::vector<uint8_t>& Target,
+    const size_t Iteration
+) const
+{
+    uint8_t hash[m_HashWidth];
+    char    reduced[m_Max];
+    size_t  length;
+
+    memcpy(&hash[0], &Target[0], m_HashWidth);
+
+    for (size_t j = Iteration; j < m_Length - 1; j++)
+    {
+        length = Reducer.Reduce(&reduced[0], m_Max, &hash[0], j);
+        DoHash((uint8_t*)&reduced[0], length, &hash[0]);
+    }
+
+    // Final reduction
+    length = Reducer.Reduce(&reduced[0], m_Max, &hash[0], m_Length - 1);
+
+    // Check end, if it matches, we can perform one full chain to see if we find it
+    size_t index = FindEndpoint(&reduced[0], length);
+    if (index != (size_t)-1)
+    {
+        return ValidateChain(index, &Target[0]);
+    }
+    return std::nullopt;
+}
+
+void
+RainbowTable::CrackOneWorker(
+    const size_t ThreadId,
+    const std::vector<uint8_t> Target
+)
+{
+    HybridReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
+
+    m_CrackingThreadsRunning++;
+
+    for (ssize_t i = m_Length - 1 - ThreadId; i >= 0 && !m_Cracked; i -= m_Threads)
+    {
+        auto result = CheckIteration(reducer, Target, i);
+        if (result.has_value())
+        {
+            dispatch::PostTaskToDispatcher(
+                "sync",
+                dispatch::bind(
+                    &RainbowTable::ResultFound,
+                    this,
+                    Util::ToHex(&Target[0], Target.size()),
+                    result.value()
+                )
+            );
+        }
+    }
+
+    m_CrackingThreadsRunning--;
+}
+
+std::optional<std::string>
+RainbowTable::CrackOne(
+    const std::string& Hash
+)
+{
+    if (Hash.size() != m_HashWidth * 2)
+    {
+        std::cerr << "Invalid length of provided hash: " << Hash.size() << " != " << m_HashWidth * 2 << std::endl;
+        std::cerr << "Hash: '" << Hash << "'" << std::endl;
+        return std::nullopt;
+    }
+
+    HybridReducer reducer(m_Min, m_Max, m_HashWidth, m_Charset);
+    auto target = Util::ParseHex(Hash);
+    std::optional<std::string> result;
+
+    // Perform linear check
+    if (m_Threads == 1)
+    {
+        for (ssize_t i = m_Length - 1; i >= 0; i--)
+        {
+            result = CheckIteration(reducer, target, i);
+            if (result.has_value())
+            {
+                break;
+            }
+        }
+    }
+    else
+    {
+        m_ThreadsCompleted = m_Threads;
+
+        // Dispatch the work to the worker threads
+        for (size_t i = 0; i < m_Threads; i++)
+        {
+            m_DispatchPool->PostTask(
+                dispatch::bind(
+                    &RainbowTable::CrackOneWorker,
+                    this,
+                    i,
+                    target
+                )
+            );
+        }
+
+        // Wait for at least one thread to start
+        while (m_CrackingThreadsRunning == 0)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+
+        // Wait for the threads to finish
+        while (m_CrackingThreadsRunning != 0)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+
+        // Check if we found the result
+        if (m_Cracked)
+        {
+            result = std::get<1>(m_LastCracked);
+        }
+    }
+
+    return result;
+}
+
+void
+RainbowTable::ResultFound(
+    const std::string Hash,
+    const std::string Result
+)
+{
+    m_Cracked = true;
+    m_CrackedResults.push_back({Hash, Result});
+    m_LastCracked = {Hash, Result};
+}
+
+void
+RainbowTable::CrackInternal(
+    const std::string Target
+)
+{
+    assert(Util::IsHex(Target) || std::filesystem::exists(Target));
+
+    // Figure out if this is a single hash
+    if (Util::IsHex(Target))
+    {
+        auto result = CrackOne(Target);
+        if (result)
+        {
+            std::cout << Target << m_Separator << result.value() << std::endl;
+        }
+
+        dispatch::PostTaskToDispatcher(
+            "main",
+            dispatch::bind(
+                &RainbowTable::CrackingComplete,
+                this
+            )
+        );
+    }
+    // Check if it is a file
+    else if (std::filesystem::exists(Target))
+    {
+        // Open the input file handle
+        m_HashFileStream = std::ifstream(Target);
+
+        if (m_UseSimd)
+        {
+            // Loop through and start the cracking jobs
+            for (size_t i = 0; i < m_Threads; i++)
+            {
+                m_DispatchPool->PostTask(
+                    dispatch::bind(
+                        &RainbowTable::CrackWorker,
+                        this,
+                        i
+                    )
+                );
+            }
+        }
+        else
+        {
+            std::string line;
+            while (std::getline(m_HashFileStream, line))
+            {
+                // std::cerr << "Cracking: " << line << std::endl;
+                m_ThreadsCompleted = 0;
+                m_Cracked = false;
+                auto result = CrackOne(line);
+                if (result.has_value())
+                {
+                    std::cout << line << m_Separator << result.value() << std::endl;
+                }
+            }
+
+            dispatch::PostTaskToDispatcher(
+                "main",
+                dispatch::bind(
+                    &RainbowTable::CrackingComplete,
+                    this
+                )
+            );
+        }
+    }
+}
+
+void
+RainbowTable::CrackingComplete(
+    void
+)
+{
+    assert(dispatch::CurrentDispatcher()->GetName() == "main");
+    // Stop the pool
+    if (m_DispatchPool != nullptr)
+    {
+        m_DispatchPool->Stop();
+        m_DispatchPool->Wait();
+    }
+    // Stop the sync dispatcher
+    if (m_SyncDispatcher != nullptr)
+    {
+        m_SyncDispatcher->Stop();
+        m_SyncDispatcher->Wait();
+    }
+    // Stop the current (main) dispatcher
+    dispatch::CurrentDispatcher()->Stop();
+}
+
 void
 RainbowTable::Crack(
     std::string& Target
@@ -1239,6 +1339,13 @@ RainbowTable::Crack(
     if (!MapTable(true))
     {
         std::cerr << "Error mapping the table" << std::endl;
+        return;
+    }
+
+    // Check the argument
+    if (!Util::IsHex(Target) && !std::filesystem::exists(Target))
+    {
+        std::cerr << "Invalid target hash or file" << std::endl;
         return;
     }
 
@@ -1252,50 +1359,28 @@ RainbowTable::Crack(
         std::cerr << " done." << std::endl;
     }
 
-    // Figure out if this is a single hash
-    if (Util::IsHex(Target))
+    if (m_Threads == 0)
     {
-        auto result = CrackOne(Target);
-        if (result)
-        {
-            std::cout << Target << m_Separator << result.value() << std::endl;
-        }
-        if (m_Threads == 1)
-        {
-            // Stop the current (main) dispatcher
-            dispatch::CurrentDispatcher()->Stop();
-        }
+        m_Threads = std::thread::hardware_concurrency();
     }
-    // Check if it is a file
-    else if (std::filesystem::exists(Target))
+
+    // Create the dispatch pool
+    if (m_Threads > 1)
     {
-        // Open the input file handle
-        m_HashFileStream = std::ifstream(Target);
-
-        if (m_Threads == 0)
-        {
-            m_Threads = std::thread::hardware_concurrency();
-        }
-
-        // Create the dispatchers
         m_DispatchPool = dispatch::CreateDispatchPool("pool", m_Threads);
+        m_SyncDispatcher = dispatch::CreateDispatcher("sync", dispatch::DoNothing);
+    }
 
-        // Loop through and start the cracking jobs
-        for (size_t i = 0; i < m_Threads; i++)
-        {
-            m_DispatchPool->PostTask(
-                dispatch::bind(
-                    &RainbowTable::CrackWorker,
-                    this,
-                    i
-                )
-            );
-        }
-    }
-    else
-    {
-        std::cerr << "Unrecognised target hash or file" << std::endl;
-    }
+    auto mainDispatcher = dispatch::CreateAndEnterDispatcher(
+        "main",
+        dispatch::bind(
+            &RainbowTable::CrackInternal,
+            this,
+            Target
+        )
+    );
+
+    mainDispatcher->Wait();
 }
 
 std::optional<std::string>

@@ -9,6 +9,7 @@
 #ifndef RainbowTable_hpp
 #define RainbowTable_hpp
 
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <limits>
@@ -16,6 +17,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <tuple>
 
 #include "DispatchQueue.hpp"
 #include "simdhash.h"
@@ -104,25 +106,13 @@ protected:
     void SortStartpoints(void);
     void RemoveStartpoints(void);
 private:
+    // General purpose
     void ChangeType(const std::filesystem::path& Destination, const TableType Type);
-    void StoreTableHeader(void) const;
-    void GenerateBlock(const size_t ThreadId, const size_t BlockId);
-    void SaveBlock(const size_t ThreadId, const size_t BlockId, const std::vector<SmallString> Block, const uint64_t Time);
-    void OutputStatus(const SmallString& LastEndpoint) const;
-    void WriteBlock(const size_t BlockId, const std::vector<SmallString>& Block);
-    void ThreadCompleted(const size_t ThreadId);
-    std::optional<std::string> CrackOne(std::string& Target);
-    void CrackOneWorker(const size_t ThreadId, const std::vector<uint8_t> Target);
     const size_t FindEndpoint(const char* Endpoint, const size_t Length) const;
     std::optional<std::string> ValidateChain(const size_t ChainIndex, const uint8_t* Hash) const;
     bool TableMapped(void) { return m_MappedTableFd != nullptr; };
     bool MapTable(const bool ReadOnly = true);
     bool UnmapTable(void);
-    void CrackWorker(const size_t ThreadId);
-    void CrackSimd(std::vector<std::string> Hashes);
-    void ResultFound(const std::string Hash, const std::string Result);
-    void IndexTable(void);
-    std::optional<std::string> CheckIteration(const HybridReducer& Reducer, const std::vector<uint8_t>& Hash, const size_t Iteration) const;
 #ifdef BIGINT
     static const mpz_class CalculateLowerBound(const size_t Min, const std::string& Charset) { return WordGenerator::WordLengthIndex(Min, Charset); };
     const mpz_class CalculateLowerBound(void) const { return CalculateLowerBound(m_Min, m_Charset); };
@@ -130,6 +120,25 @@ private:
     static const uint64_t CalculateLowerBound(const size_t Min, const std::string& Charset) { return WordGenerator::WordLengthIndex64(Min, Charset); };
     const uint64_t CalculateLowerBound(void) const { return CalculateLowerBound(m_Min, m_Charset); };
 #endif
+    // Building
+    void StoreTableHeader(void) const;
+    void GenerateBlock(const size_t ThreadId, const size_t BlockId);
+    void SaveBlock(const size_t ThreadId, const size_t BlockId, const std::vector<SmallString> Block, const uint64_t Time);
+    void OutputStatus(const SmallString& LastEndpoint) const;
+    void WriteBlock(const size_t BlockId, const std::vector<SmallString>& Block);
+    void ThreadCompleted(const size_t ThreadId);
+    // Cracking
+    void IndexTable(void);
+    void CrackWorker(const size_t ThreadId);
+    void CrackSimd(std::vector<std::string> Hashes);
+    void CrackInternal(const std::string Target);
+    std::optional<std::string> CrackOne(const std::string& Target);
+    void CrackOneWorker(const size_t ThreadId, const std::vector<uint8_t> Target);
+    void ReadAndCrackNext(void);
+    void ResultFound(const std::string Hash, const std::string Result);
+    std::optional<std::string> CheckIteration(const HybridReducer& Reducer, const std::vector<uint8_t>& Hash, const size_t Iteration) const;
+    void CrackingComplete(void);
+
     // General purpose
     std::string m_Operation;
     std::filesystem::path m_Path;
@@ -146,12 +155,12 @@ private:
     size_t m_ChainWidth = 0;
     size_t m_Chains = 0;
     TableType m_TableType = TypeCompressed;
+    dispatch::DispatchPoolPtr m_DispatchPool;
     // For building
     size_t m_StartingChains = 0;
     FILE* m_WriteHandle = NULL;
     size_t m_NextWriteBlock = 0;
     std::map<size_t, const std::vector<SmallString>> m_WriteCache;
-    dispatch::DispatchPoolPtr m_DispatchPool;
     size_t m_ThreadsCompleted = 0;
     size_t m_ChainsWritten = 0;
     std::map<size_t, uint64_t> m_ThreadTimers;
@@ -160,6 +169,7 @@ private:
     FILE* m_MappedTableFd = nullptr;
     size_t m_MappedFileSize;
     size_t m_MappedTableSize;
+    dispatch::DispatcherBasePtr m_SyncDispatcher;
     static constexpr size_t LOOKUP_SIZE = std::numeric_limits<uint16_t>::max() + 1;
     const uint8_t* m_MappedTableLookup[LOOKUP_SIZE];
     size_t m_MappedTableLookupSize[LOOKUP_SIZE];
@@ -170,7 +180,11 @@ private:
     std::ifstream m_HashFileStream;
     std::mutex m_HashFileStreamLock;
     char m_Separator = ':';
-    size_t m_Cracked = 0;
+    std::atomic<bool> m_Cracked = false;
+    std::atomic<size_t> m_CrackingThreadsRunning = 0;
+    bool m_UseSimd = false;
+    std::vector<std::tuple<std::string, std::string>> m_CrackedResults;
+    std::tuple<std::string, std::string> m_LastCracked;
 };
 
 #endif /* RainbowTable_hpp */
