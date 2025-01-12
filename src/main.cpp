@@ -113,6 +113,10 @@ main(
             ARGCHECK();
             rainbow.SetAlgorithm(argv[++i]);
         }
+        else if (arg == "--md4")
+        {
+            rainbow.SetAlgorithm("md4");
+        }
         else if (arg == "--md5")
         {
             rainbow.SetAlgorithm("md5");
@@ -124,6 +128,10 @@ main(
         else if (arg == "--sha256")
         {
             rainbow.SetAlgorithm("sha256");
+        }
+        else if (arg == "--ntlm")
+        {
+            rainbow.SetAlgorithm("ntlm");
         }
         else if (arg == "--noindex")
         {
@@ -151,16 +159,7 @@ main(
             return 1;
         }
 
-        //
-        // Create the main dispatcher
-        //
-        auto mainDispatcher = dispatch::CreateAndEnterDispatcher(
-            "main",
-            dispatch::bind(
-                &RainbowTable::InitAndRunBuild,
-                &rainbow
-            )
-        );
+        rainbow.InitAndRunBuild();
     }
     else if (action == "crack")
     {
@@ -242,14 +241,7 @@ main(
         auto hash = rainbow.DoHashHex((uint8_t*)&target[0], target.size());
         std::cout << "Testing for password \"" << target << "\": " << hash << std::endl;
 
-        auto mainDispatcher = dispatch::CreateAndEnterDispatcher(
-            "main",
-            dispatch::bind(
-                &RainbowTable::Crack,
-                &rainbow,
-                hash
-            )
-        );
+        rainbow.Crack(hash);
     }
 
     return 0;

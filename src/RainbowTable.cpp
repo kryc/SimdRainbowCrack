@@ -85,6 +85,12 @@ RainbowTable::InitAndRunBuild(
         return;
     }
 
+    // Create the main (io) dispatcher
+    auto mainDispatcher = dispatch::CreateDispatcher(
+        "main",
+        dispatch::DoNothing
+    );
+
     if (m_Threads > 1)
     {
         m_DispatchPool = dispatch::CreateDispatchPool("pool", m_Threads);
@@ -112,6 +118,9 @@ RainbowTable::InitAndRunBuild(
             )
         );
     }
+
+    // Wait on the main thread
+    mainDispatcher->Wait();
 }
 
 void
@@ -128,7 +137,7 @@ RainbowTable::GenerateBlock(
         dispatch::PostTaskToDispatcher(
             "main",
             dispatch::bind(
-                &RainbowTable::ThreadCompleted,
+                &RainbowTable::BuildThreadCompleted,
                 this,
                 ThreadId
             )
@@ -578,7 +587,7 @@ RainbowTable::ValidateConfig(
 }
 
 void
-RainbowTable::ThreadCompleted(
+RainbowTable::BuildThreadCompleted(
     const size_t ThreadId
 )
 {
@@ -851,30 +860,6 @@ RainbowTable::IndexTable(
 #endif
 
     m_Indexed = true;
-}
-
-/* static */ void
-RainbowTable::DoHash(
-    const uint8_t* Data,
-    const size_t Length,
-    uint8_t* Digest,
-    const HashAlgorithm Algorithm
-)
-{
-    switch (Algorithm)
-    {
-    case HashAlgorithmMD5:
-        MD5(Data, Length, Digest);
-        break;
-    case HashAlgorithmSHA1:
-        SHA1(Data, Length, Digest);
-        break;
-    case HashAlgorithmSHA256:
-        SHA256(Data, Length, Digest);
-        break;
-    default:
-        break;
-    }
 }
 
 /* static */

@@ -91,8 +91,8 @@ public:
     std::vector<std::tuple<std::string, std::string>> Crack(std::string& Target);
     static const size_t ChainWidthForType(const TableType Type, const size_t Max) { return Type == TypeCompressed ? Max : sizeof(rowindex_t) + Max; }
     const size_t GetChainWidth(void) const { return ChainWidthForType(m_TableType, m_Max); }
-    static void DoHash(const uint8_t* Data, const size_t Length, uint8_t* Digest, const HashAlgorithm);
-    static const std::string DoHashHex(const uint8_t* Data, const size_t Length, const HashAlgorithm);
+    static void DoHash(const uint8_t* Data, const size_t Length, uint8_t* Digest, const HashAlgorithm Algorithm) { SimdHashSingle(Algorithm, Length, Data, Digest); };
+    static const std::string DoHashHex(const uint8_t* Data, const size_t Length, const HashAlgorithm Algorithm);
     void DoHash(const uint8_t* Data, const size_t Length, uint8_t* Digest) const { DoHash(Data, Length, Digest, m_Algorithm); }
     std::string DoHashHex(const uint8_t* Data, const size_t Length) const { return DoHashHex(Data, Length, m_Algorithm); }
     void Decompress(const std::filesystem::path& Destination) { ChangeType(Destination, TypeUncompressed); }
@@ -126,7 +126,7 @@ private:
     void SaveBlock(const size_t ThreadId, const size_t BlockId, const std::vector<SmallString> Block, const uint64_t Time);
     void OutputStatus(const SmallString& LastEndpoint) const;
     void WriteBlock(const size_t BlockId, const std::vector<SmallString>& Block);
-    void ThreadCompleted(const size_t ThreadId);
+    void BuildThreadCompleted(const size_t ThreadId);
     // Cracking
     void IndexTable(void);
     std::optional<std::string> CrackOne(const std::string& Target);
